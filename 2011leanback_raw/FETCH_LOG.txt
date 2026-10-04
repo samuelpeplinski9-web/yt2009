@@ -1,0 +1,7 @@
+  try https://web.archive.org/web/20120622093607id_/http://www.youtube.com/leanback -> 429
+  try https://web.archive.org/web/20120622id_/http://www.youtube.com/leanback -> URLError(ConnectionRefusedError(111, 'Connection refused'))
+  try https://web.archive.org/web/20120601id_/http://www.youtube.com/leanback -> 429
+  try https://web.archive.org/web/20120801id_/http://www.youtube.com/leanback -> 429
+  try https://web.archive.org/web/2012id_/http://www.youtube.com/leanback -> URLError(ConnectionRefusedError(111, 'Connection refused'))
+  try https://web.archive.org/web/20120622093607/http://www.youtube.com/leanback -> 429
+FATAL: could not fetch start page in any flavor
