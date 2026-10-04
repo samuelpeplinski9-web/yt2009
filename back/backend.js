@@ -1545,38 +1545,39 @@ app.get("/get_video_info", (req, res) => {
             ].join("&")
             url_encoded_fmt_stream_map.push(fmtData)
         }
-        let urlStreams = (addUrlEncoded
-        ? encodeURIComponent(
-            url_encoded_fmt_stream_map.join(",")
-        )
-        : false)
-        let sabrStr = useSabr ? `\nsabr=1` : ""
         function sendData() {
-            res.send(`status=ok
-length_seconds=${data.length}
-keywords=${tags.join(",").split("&").join("")}
-vq=None
-muted=0
-avg_rating=5.0
-thumbnail_url=${
-    encodeURIComponent(
-        `${req.protocol}://i.ytimg.com/vi/${req.query.video_id}/hqdefault.jpg`
-    )
-}
-allow_ratings=1
-hl=en
-ftoken=
-allow_embed=1
-fmt_map=${encodeURIComponent(fmt_map)}
-fmt_url_map=${encodeURIComponent(fmt_stream_map)}
-token=${playback}
-plid=${playback}
-track_embed=0
-author=${data.author_name.split("&").join("")}
-title=${data.title.split("&").join("")}
-video_id=${req.query.video_id}
-fmt_list=${encodeURIComponent(fmt_list)}
-fmt_stream_map=${encodeURIComponent(fmt_stream_map)}${urlStreams}${sabrStr}`.split("\n").join("&"))
+            let responseFields = [
+                "status=ok",
+                `length_seconds=${data.length}`,
+                `keywords=${tags.join(",").split("&").join("")}`,
+                "vq=None",
+                "muted=0",
+                "avg_rating=5.0",
+                `thumbnail_url=${encodeURIComponent(
+                    `${req.protocol}://i.ytimg.com/vi/${req.query.video_id}/hqdefault.jpg`
+                )}`,
+                "allow_ratings=1",
+                "hl=en",
+                "ftoken=",
+                "allow_embed=1",
+                `fmt_map=${encodeURIComponent(fmt_map)}`,
+                `fmt_url_map=${encodeURIComponent(fmt_stream_map)}`,
+                `token=${playback}`,
+                `plid=${playback}`,
+                "track_embed=0",
+                `author=${(data.author_name || "").split("&").join("")}`,
+                `title=${(data.title || "").split("&").join("")}`,
+                `video_id=${req.query.video_id}`,
+                `fmt_list=${encodeURIComponent(fmt_list)}`,
+                `fmt_stream_map=${encodeURIComponent(fmt_stream_map)}`
+            ];
+            if(addUrlEncoded && url_encoded_fmt_stream_map.length > 0) {
+                responseFields.push(`url_encoded_fmt_stream_map=${encodeURIComponent(url_encoded_fmt_stream_map.join(","))}`);
+            }
+            if(useSabr) {
+                responseFields.push("sabr=1");
+            }
+            res.send(responseFields.join("&"));
         }
         sendData()
     })

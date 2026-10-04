@@ -54,6 +54,7 @@ module.exports = {
         let createProto = this.createProto
         let parseResponse = this.parseResponse
         let selfRef = this.handlePlayer;
+        p.qualities = p.qualities || [];
 		
 		let customItag = false;
 		if(req.query.user_video_itag
@@ -136,9 +137,20 @@ module.exports = {
                     return s.itag == 160
                 })
             }
+            if(!videoFmts[0]) {
+                videoFmts = fmts.filter((s) => {
+                    return s.itag !== 140 && s.itag !== 139
+                })
+            }
+            if(!videoFmts[0] && r.streamingData && r.streamingData.adaptiveFormats) {
+                videoFmts = r.streamingData.adaptiveFormats.filter((s) => {
+                    return s.itag !== 140 && s.itag !== 139
+                })
+            }
             if(p.pongItag
             && p.dirty
             && customItag
+            && videoFmts[0]
             && videoFmts[0].itag !== customItag) {
                 let target = videoFmts.filter(s => {
                     return s.itag == customItag
@@ -150,6 +162,11 @@ module.exports = {
             let audioFmts = fmts.filter((s) => {
                 return (s.itag == 140 || s.itag == 139)
             })
+            if(!audioFmts[0] && r.streamingData && r.streamingData.adaptiveFormats) {
+                audioFmts = r.streamingData.adaptiveFormats.filter((s) => {
+                    return s.itag == 140 || s.itag == 139 || (s.mimeType && s.mimeType.startsWith("audio/"))
+                })
+            }
             audioFmts = audioFmts.sort((a,b) => {
                 if(b.totalbitrate) {
                     return b.totalbitrate - a.totalbitrate;
@@ -239,6 +256,9 @@ module.exports = {
                 pullCount++
                 if(pullCount > pullMax) {
                     console.log("exceeded pull tries!")
+                    if(players[p.id]) {
+                        delete players[p.id]
+                    }
                     callback(false)
                     return;
                 }
@@ -254,7 +274,14 @@ module.exports = {
                 }).catch(e => {
                     // retry on network error
                     pull()
-                }).then(r => {if(!r || !r.status) return;r.buffer().then(r => {
+                }).then(r => {
+                    if(!r || !r.status) return;
+                    if(r.status === 403 || r.status === 404) {
+                        if(players[p.id]) {
+                            delete players[p.id]
+                        }
+                    }
+                    r.buffer().then(r => {
                     if(r.length < 1000) {
                         console.log(`no media response? ${r.toString("base64")}`)
                     }
@@ -313,10 +340,14 @@ module.exports = {
                     }, (redir) => {
                         if(redir) {
                             // use for later request
-                            players[p.id].sabrUrl = redir;
+                            if(players[p.id]) {
+                                players[p.id].sabrUrl = redir;
+                            }
                             gotRedirectData = true;
                         }
                     }, parseOptions)
+                }).catch(err => {
+                    pull()
                 })})
             }
             pull()
@@ -326,13 +357,19 @@ module.exports = {
         // related to it
         if(req.query.force_replayer) {
             console.log(`[sabr/${playbackSession}] force replayer called!`)
+            if(players[p.id]) {
+                delete players[p.id]
+            }
         }
         function extractPlayerData(data, cId) {
-            if(data.streamingData) {
+            if(data && data.streamingData) {
                 data.sabrUrl = data.streamingData.serverAbrStreamingUrl;
-                data.ustreamer = data.playerConfig.mediaCommonConfig
-                                    .mediaUstreamerRequestConfig
-                                    .videoPlaybackUstreamerConfig;
+                data.ustreamer = data.playerConfig
+                                    && data.playerConfig.mediaCommonConfig
+                                    && data.playerConfig.mediaCommonConfig.mediaUstreamerRequestConfig
+                                    && data.playerConfig.mediaCommonConfig.mediaUstreamerRequestConfig.videoPlaybackUstreamerConfig
+                                    ? data.playerConfig.mediaCommonConfig.mediaUstreamerRequestConfig.videoPlaybackUstreamerConfig
+                                    : "";
                 if(data.sabrUrl && data.sabrUrl.includes("expire=")) {
                     data.expiry = parseInt(
                         data.sabrUrl.split("expire=")[1].split("&")[0]
@@ -340,14 +377,14 @@ module.exports = {
                 } else {
                     data.expiry = Date.now() + (7200 * 1000) // 2 hrs
                 }
+                players[cId || p.id] = data;
             }
-            players[cId || p.id] = data;
         }
         if(p.useHfr) {
             let id = p.id + "/hfr"
-            if(players[id] && players[id].expiry - 60000 >= Date.now()) {
+            if(players[id] && players[id].sabrUrl && players[id].expiry - 60000 >= Date.now() && !req.query.force_replayer) {
                 processPlayer(players[id])
-            } else if(!players[id] && yt2009exports.read().players[id]) {
+            } else if(!players[id] && yt2009exports.read().players[id] && yt2009exports.read().players[id].streamingData && yt2009exports.read().players[id].streamingData.serverAbrStreamingUrl && !req.query.force_replayer) {
                 if(config.env == "dev") {
                     console.log(`using cached exports player for ${id}`)
                 }
@@ -369,14 +406,14 @@ module.exports = {
             }
             return;
         }
-        if(!players[p.id] && yt2009exports.read().players[p.id]) {
+        if(!players[p.id] && yt2009exports.read().players[p.id] && yt2009exports.read().players[p.id].streamingData && yt2009exports.read().players[p.id].streamingData.serverAbrStreamingUrl && !req.query.force_replayer) {
             if(config.env == "dev") {
                 console.log(`using cached exports player for ${playbackSession}`)
             }
             players[p.id] = yt2009exports.read().players[p.id]
             extractPlayerData(players[p.id])
         }
-        if(players[p.id] && players[p.id].expiry - 60000 >= Date.now()
+        if(players[p.id] && players[p.id].sabrUrl && players[p.id].expiry - 60000 >= Date.now()
         && !req.query.force_replayer) {
             /*if(config.env == "dev") {
                 console.log(`using cached sabr player for ${playbackSession}`)
@@ -446,16 +483,16 @@ module.exports = {
         const requestProto = require("./proto/sabr_pb")
         let videoItag = new requestProto.itagData()
         videoItag.setItag(videoItagN)
-        if(videoLmt) {
-            videoItag.setLastmodifiedtime(videoLmt)
+        if(videoLmt && !isNaN(parseInt(videoLmt))) {
+            videoItag.setLastmodifiedtime(parseInt(videoLmt))
         }
 		if(videoXtags) {
 			videoItag.setDrcstring(videoXtags)
 		}
         let audioItag = new requestProto.itagData()
         audioItag.setItag(audioItagN)
-        if(audioLmt) {
-            audioItag.setLastmodifiedtime(audioLmt)
+        if(audioLmt && !isNaN(parseInt(audioLmt))) {
+            audioItag.setLastmodifiedtime(parseInt(audioLmt))
         }
         audioItag.setDrcstring(audioXtags ? audioXtags : "")
         let abrReq = new requestProto.root()
@@ -726,18 +763,20 @@ module.exports = {
                         var tempOffset = offset + 1
                         this.chunkedDataBuffer.focus(tempOffset)
 
-                        if(this.canReadFromCurrentChunk(tempOffset,4)) {
+                        if(this.canReadFromCurrentChunk(tempOffset, 4)) {
                             value = this.getCurrentDataView().getUint32(
                                 tempOffset - this.chunkedDataBuffer.currentChunkOffset,
                                 true
                             )
+                            offset += 5;
+                            break;
                         } else {
+                            var b41 = this.chunkedDataBuffer.getUint8(tempOffset)
+                            var b42 = this.chunkedDataBuffer.getUint8(tempOffset + 1)
                             var b43 = this.chunkedDataBuffer.getUint8(tempOffset + 2)
                             var b44 = this.chunkedDataBuffer.getUint8(tempOffset + 3)
-                            var b41 = this.chunkedDataBuffer.getUint8(tempOffset + 1)
-                            b43 = b43 + 256 * b44
 
-                            value = this.chunkedDataBuffer(tempOffset) + 256 * (b41 + 256 * b33)
+                            value = b41 + 256 * (b42 + 256 * (b43 + 256 * b44))
 
                             offset += 5
                             break;
@@ -750,7 +789,7 @@ module.exports = {
 
             canReadFromCurrentChunk(offset, length) {
                 return offset - this.chunkedDataBuffer.currentChunkOffset + length
-                    <= this.chunkedDataBuffer[this.chunkedDataBuffer.currentChunkIndex].length
+                    <= this.chunkedDataBuffer.chunks[this.chunkedDataBuffer.currentChunkIndex].length
             }
 
             getCurrentDataView() {
@@ -771,7 +810,17 @@ module.exports = {
             let parts = []
             let umpParse = new ump(new chunkedDataBuffer([r]))
             umpParse.parse(function(part) {
-                var data = part.data.chunks[0]
+                var data;
+                if(part.data.chunks.length === 1) {
+                    data = part.data.chunks[0];
+                } else {
+                    data = new Uint8Array(part.data.getLength());
+                    var pos = 0;
+                    for(var i = 0; i < part.data.chunks.length; i++) {
+                        data.set(part.data.chunks[i], pos);
+                        pos += part.data.chunks[i].length;
+                    }
+                }
                 var type = part.type
                 if(type == 11 && data.length > 100) {
                     try {
@@ -797,25 +846,32 @@ module.exports = {
 
         // concat fragments and write
         function finalize() {
-            if(!videoInit) {
-                // if no videoinit, mark as empty
-                // and pray that one of the fragments has it
-                videoInit = Buffer.from("")
-            }
-            if(!audioInit) {
-                // same for audioInit
-                audioInit = Buffer.from("")
-            }
-            for(var n in fragments) {
+            let videoInitUsed = false;
+            let audioInitUsed = false;
+            let fragmentKeys = Object.keys(fragments);
+            
+            // Sort fragment keys so lower chunk numbers receive init headers first
+            fragmentKeys.sort((a, b) => {
+                let aNum = parseInt(a.split("-")[1]) || 0;
+                let bNum = parseInt(b.split("-")[1]) || 0;
+                return aNum - bNum;
+            });
+
+            for(var idx = 0; idx < fragmentKeys.length; idx++) {
+                var n = fragmentKeys[idx];
                 var isVideo = (audioItags.indexOf(parseInt(n.split("-")[0])) == -1)
 
                 let mediaData = Buffer.concat(fragments[n])
                 let wholeChunk;
                 
-                if(isVideo && videoInit) {
+                if(isVideo && videoInit && videoInit.length > 0 && !videoInitUsed) {
                     wholeChunk = Buffer.concat([videoInit, mediaData])
-                } else if(!isVideo && audioInit) {
+                    videoInitUsed = true;
+                } else if(!isVideo && audioInit && audioInit.length > 0 && !audioInitUsed) {
                     wholeChunk = Buffer.concat([audioInit, mediaData])
+                    audioInitUsed = true;
+                } else {
+                    wholeChunk = mediaData;
                 }
 
                 finalFragments[n] = wholeChunk
@@ -846,9 +902,11 @@ module.exports = {
                 return s.friendlyType == "MEDIA_HEADER"
             })
             tMediaHeaders.forEach(function(m) {
-                mediaHeaders.push(
-                    sabrResponsePb.root.deserializeBinary(m.data).toObject()
-                )
+                try {
+                    mediaHeaders.push(
+                        sabrResponsePb.root.deserializeBinary(m.data).toObject()
+                    )
+                } catch(e) {}
             })
 
             // redirect data (follow for the next request)
@@ -877,11 +935,13 @@ module.exports = {
                 return s.friendlyType == "MEDIA_FRAGMENT"
             })
             tMediaData.forEach(function(m) {
+                if(!m.data || m.data.length < 1) return;
                 // first byte is chunknumber
                 var chunk = m.data[0]
                 var header = mediaHeaders.filter(function(s) {
                     return s.chunknumber == chunk;
                 })[0]
+                if(!header) return;
                 var mdata = m.data.slice(1)
 
                 // content times if needed
@@ -968,7 +1028,17 @@ module.exports = {
 
             var umpParse = new ump(new chunkedDataBuffer([fullRes]))
             umpParse.parse(function(part) {
-                var data = part.data.chunks[0]
+                var data;
+                if(part.data.chunks.length === 1) {
+                    data = part.data.chunks[0];
+                } else {
+                    data = new Uint8Array(part.data.getLength());
+                    var pos = 0;
+                    for(var i = 0; i < part.data.chunks.length; i++) {
+                        data.set(part.data.chunks[i], pos);
+                        pos += part.data.chunks[i].length;
+                    }
+                }
                 var type = part.type
                 var friendlyType = "";
                 switch(type) {
@@ -982,7 +1052,7 @@ module.exports = {
                     }
                     case 22: {
                         friendlyType = "MEDIA_END"
-                        break
+                        break;
                     }
 					case 31: {
 						friendlyType = "LIVE_HEADER"

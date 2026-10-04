@@ -347,11 +347,14 @@ function requestSabr(offset, source, force) {
 	}
 	function retryRequest(force) {
 		sabrData.lastRequestFailCount++
-		if(sabrData.lastRequestFailCount > 3) {
+		if((sabrData.lastRequestFailCount > 3 && force)
+		|| (sabrData.lastRequestFailCount > 10 && !force)) {
 			console.warn("last sabr request failed too many times! no recovery")
 			return;
 		}
-		requestSabr(offset, source, force)
+		setTimeout(function() {
+			requestSabr(offset, source, force)
+		}, 500)
 	}
 	r.open("GET", url.join(""))
 	r.responseType = "arraybuffer"
@@ -368,8 +371,8 @@ function requestSabr(offset, source, force) {
 			return;
 		}
 		if(r.status >= 400) {
-			// invalid response
-			console.log("network response problem")
+			// retry on network error
+			retryRequest(r.status >= 500 || r.status === 404 || r.status === 403)
 			return;
 		}
 		// parse x-yt2009-saber
@@ -377,6 +380,10 @@ function requestSabr(offset, source, force) {
 		var partsInResponse = parseInt(
 			r.getResponseHeader("x-part-count")
 		)
+		if(isNaN(partsInResponse) || partsInResponse < 0) {
+			retryRequest()
+			return;
+		}
 		var s = r.response;
 		var cursor = 14 // SABER-START
 
@@ -390,14 +397,17 @@ function requestSabr(offset, source, force) {
 			return;
 		}
 		sabrData.lastRequestFailCount = 0;
-		while(partsExtracted !== partsInResponse) {
+		while(partsExtracted < partsInResponse && cursor < s.byteLength) {
 			var partHeader = uint8tostring(
-				new Uint8Array(s.slice(cursor, cursor + 70))
+				new Uint8Array(s.slice(cursor, Math.min(s.byteLength, cursor + 70)))
 			)
+			if(partHeader.indexOf("//") === -1) break;
 			partHeader = partHeader.split("//")[1]
+			if(!partHeader) break;
 			var headerLength = ("//" + partHeader + "//").length
-			var partId = partHeader.split("SPART-\"")[1].split("\"")[0]
-			var plen = parseInt(partHeader.split("-CL=")[1])
+			var partId = (partHeader.split("SPART-\"")[1] || "").split("\"")[0]
+			var plen = parseInt(partHeader.split("-CL=")[1] || "0")
+			if(!partId || isNaN(plen)) break;
 			var pdata = s.slice(
 				cursor + headerLength,
 				cursor + headerLength + plen
@@ -444,12 +454,33 @@ if(window.sabrBase) {
 	window.sabrHd = false;
 	
 	function readyStart() {
-		sabrData.videoMime = "video/mp4; codecs=\"avc1.4D4028\""
-		sabrData.audioMime = "audio/mp4; codecs=\"mp4a.40.2\""
-        vStream = ms.addSourceBuffer(sabrData.videoMime)
-        aStream = ms.addSourceBuffer(sabrData.audioMime)
-        sabrData.videoBuffer = vStream
-        sabrData.audioBuffer = aStream
+		var defaultVideoMime = "video/mp4; codecs=\"avc1.4D4028\""
+		var defaultAudioMime = "audio/mp4; codecs=\"mp4a.40.2\""
+		if(window.MediaSource && typeof MediaSource.isTypeSupported === "function") {
+			if(!MediaSource.isTypeSupported(defaultVideoMime)) {
+				if(MediaSource.isTypeSupported("video/mp4; codecs=\"avc1.42E01E\"")) {
+					defaultVideoMime = "video/mp4; codecs=\"avc1.42E01E\""
+				} else if(MediaSource.isTypeSupported("video/mp4")) {
+					defaultVideoMime = "video/mp4"
+				}
+			}
+			if(!MediaSource.isTypeSupported(defaultAudioMime)) {
+				if(MediaSource.isTypeSupported("audio/mp4")) {
+					defaultAudioMime = "audio/mp4"
+				}
+			}
+		}
+		sabrData.videoMime = defaultVideoMime
+		sabrData.audioMime = defaultAudioMime
+		try {
+			vStream = ms.addSourceBuffer(sabrData.videoMime)
+			aStream = ms.addSourceBuffer(sabrData.audioMime)
+			sabrData.videoBuffer = vStream
+			sabrData.audioBuffer = aStream
+		} catch(err) {
+			console.error("addSourceBuffer failed in embed", err)
+			return;
+		}
 		requestSabr(0, "TIMED")
     }
 
@@ -459,33 +490,43 @@ if(window.sabrBase) {
     }, false)
 	
 	var vbq = setInterval(function() {
-        if(sabrData.appendQueue[0]) {
-            if(sabrData.appendQueue[0].type == "audio"
-            && sabrData.audioBuffer && !sabrData.audioBuffer.updating) {
-                try {
-                    sabrData.audioBuffer.appendBuffer(
-                        sabrData.appendQueue[0].data
-                    )
+        if(!sabrData || !sabrData.rawMediaSource || sabrData.rawMediaSource.readyState !== "open") return;
+        if(sabrData.appendQueue && sabrData.appendQueue.length > 0) {
+            for(var i = 0; i < sabrData.appendQueue.length; i++) {
+                var chunk = sabrData.appendQueue[i];
+                if(chunk.type == "audio" && sabrData.audioBuffer && !sabrData.audioBuffer.updating) {
+                    try {
+                        sabrData.audioBuffer.appendBuffer(chunk.data)
+                        sabrData.appendQueue.splice(i, 1)
+                    } catch(error) {
+                        if(error.name === "QuotaExceededError") {
+                            try {
+                                if(video.currentTime > 30) {
+                                    sabrData.audioBuffer.remove(0, video.currentTime - 30)
+                                }
+                            } catch(e){}
+                        }
+                    }
+                    break;
                 }
-                catch(error) {
-                    clearInterval(vbq)
-                    initAsSabr()
-                    return;
+            }
+            for(var j = 0; j < sabrData.appendQueue.length; j++) {
+                var vChunk = sabrData.appendQueue[j];
+                if(vChunk.type == "video" && sabrData.videoBuffer && !sabrData.videoBuffer.updating) {
+                    try {
+                        sabrData.videoBuffer.appendBuffer(vChunk.data)
+                        sabrData.appendQueue.splice(j, 1)
+                    } catch(error) {
+                        if(error.name === "QuotaExceededError") {
+                            try {
+                                if(video.currentTime > 30) {
+                                    sabrData.videoBuffer.remove(0, video.currentTime - 30)
+                                }
+                            } catch(e){}
+                        }
+                    }
+                    break;
                 }
-                sabrData.appendQueue.shift()
-            } else if(sabrData.appendQueue[0].type == "video"
-            && sabrData.videoBuffer && !sabrData.videoBuffer.updating) {
-                try {
-                    sabrData.videoBuffer.appendBuffer(
-                        sabrData.appendQueue[0].data
-                    )
-                }
-                catch(error) {
-                    clearInterval(vbq)
-                    initAsSabr()
-                    return;
-                }
-                sabrData.appendQueue.shift()
             }
             if(!sabrData.firstRequestComplete) {
                 sabrData.firstRequestComplete = true;
@@ -494,7 +535,7 @@ if(window.sabrBase) {
                 }, 500)
             }
         }
-    }, 250)
+    }, 100)
 	
 	// watch for new buffer fetches
     video.addEventListener("timeupdate", function() {

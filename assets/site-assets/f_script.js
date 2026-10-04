@@ -3038,9 +3038,11 @@ in the player itself can cause video glitches (skipping, freezing, ...)
 */
 function flashQualityReinit(quality, currentTime) {
     var videoPlayer = document.getElementById("watch-player-div")
+    if(!videoPlayer) return;
     var param = videoPlayer.getElementsByTagName("param")[0]
     var embed = videoPlayer.getElementsByTagName("embed")[0]
-    var url = embed.getAttribute("src")
+    var url = (embed && embed.getAttribute("src")) || (param && param.getAttribute("value")) || ""
+    if(!url) return;
     if(url.indexOf("&start=") !== -1) {
         var start = url.split("&start=")[1].split("&")[0]
         url = url.replace("&start=" + start, "")
@@ -3050,8 +3052,12 @@ function flashQualityReinit(quality, currentTime) {
         url = url.replace("&vq=" + vq, "")
     }
     url += "&vq=" + quality + "&start=" + parseInt(currentTime || 0)
-    param.setAttribute("value", url)
-    embed.setAttribute("src", url)
+    if(param) {
+        param.setAttribute("value", url)
+    }
+    if(embed) {
+        embed.setAttribute("src", url)
+    }
     videoPlayer.innerHTML = videoPlayer.innerHTML // force re-render
 }
 

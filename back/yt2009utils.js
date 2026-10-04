@@ -1781,7 +1781,11 @@ module.exports = {
                 }
                 r.json().then(r => {
                     processPlayerResponse(r)
+                }).catch(err => {
+                    processPlayerResponse(false)
                 })
+            }).catch(err => {
+                processPlayerResponse(false)
             })
         }
 
@@ -3364,7 +3368,11 @@ module.exports = {
             if(callback) {
                 callback()
             }
-        })})
+        })}).catch(err => {
+            if(callback) {
+                callback()
+            }
+        })
     },
 
     "initWyjeba": function(callback) {
@@ -3434,7 +3442,12 @@ module.exports = {
                         onInitComplete()
                     }
                 }
-            })})
+            })}).catch(err => {
+                inits++
+                if(inits == initsNeeded) {
+                    onInitComplete()
+                }
+            })
         }, 250)
     },
 
@@ -3574,7 +3587,7 @@ module.exports = {
                 return;
             }
             yt2009exports.writeData("youtubeIp", r.Answer[0].data)
-        })})
+        }).catch(err => {})}).catch(err => {})
     }
 }
 

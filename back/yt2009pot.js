@@ -143,6 +143,9 @@ module.exports = {
             overridenKey = null;
             overridenKeyId = null;
             packagePot()
-        })})
+        })}).catch(err => {
+            console.log("po fetch failed:", err ? err.message : "unknown error");
+            packagePot();
+        })
     }
 }

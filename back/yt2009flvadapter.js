@@ -402,9 +402,14 @@ function craftVideoMetadata(duration, width, height, framerate) {
 }
 
 function craftAvcHeaderPacket(videoFile) {
+    if(!videoFile || videoFile.length < 8) return Buffer.from([23,0,0,0,0]);
     let avcCBox = videoFile.indexOf("avcC")
+    if(avcCBox === -1 || avcCBox < 4) return Buffer.from([23,0,0,0,0]);
     let boxLength = videoFile.readUInt32BE(avcCBox - 4) - 4
-    avcCBox = videoFile.slice(avcCBox + 4, avcCBox + boxLength)
+    if(avcCBox + 4 + boxLength > videoFile.length) {
+        boxLength = videoFile.length - (avcCBox + 4)
+    }
+    avcCBox = videoFile.slice(avcCBox + 4, avcCBox + 4 + boxLength)
     return Buffer.concat([
         Buffer.from([23,0,0,0,0]),
         avcCBox
@@ -412,31 +417,46 @@ function craftAvcHeaderPacket(videoFile) {
 }
 
 function craftAacHeaderPacket(audioFile) {
+    if(!audioFile || audioFile.length < 8) return Buffer.from("AF00", "hex");
     let esdsBox = audioFile.indexOf("esds")
-    let boxLength = audioFile.readUInt32BE(esdsBox - 4) - 7
-    esdsBox = audioFile.slice(esdsBox + 4, esdsBox + boxLength)
-    esdsBox = esdsBox.slice(esdsBox.byteLength - 16)
+    if(esdsBox === -1 || esdsBox < 4) return Buffer.from("AF00", "hex");
+    let boxLength = Math.max(0, audioFile.readUInt32BE(esdsBox - 4) - 7)
+    if(esdsBox + 4 + boxLength > audioFile.length) {
+        boxLength = audioFile.length - (esdsBox + 4)
+    }
+    esdsBox = audioFile.slice(esdsBox + 4, esdsBox + 4 + boxLength)
+    esdsBox = esdsBox.slice(Math.max(0, esdsBox.byteLength - 16))
     return Buffer.concat([Buffer.from("AF00", "hex"), esdsBox]) // AF00 -- intro
 }
 
 // yt2009sabr
 function readTimescale(file) {
-    let mvhdBox = file.indexOf("mvhd") + 16
-    return file.readUInt32BE(mvhdBox)
+    if(!file || file.length < 24) return 1000;
+    let mvhdBox = file.indexOf("mvhd")
+    if(mvhdBox === -1 || mvhdBox + 20 > file.length) return 1000;
+    return file.readUInt32BE(mvhdBox + 16) || 1000;
 }
 
 function readTfdt(file) {
+    if(!file || file.length < 12) return 0;
     let tfdtBox = file.indexOf("tfdt")
+    if(tfdtBox === -1 || tfdtBox < 4) return 0;
     let boxLength = file.readUInt32BE(tfdtBox - 4) - 4
-    tfdtBox = file.slice(tfdtBox + 4, tfdtBox + boxLength)
+    if(tfdtBox + 4 + boxLength > file.length) {
+        boxLength = file.length - (tfdtBox + 4)
+    }
+    tfdtBox = file.slice(tfdtBox + 4, tfdtBox + 4 + boxLength)
+    if(tfdtBox.length < 4) return 0;
     if(tfdtBox.readUInt8(0) == 1) {
         // tfdt version 1 (8byte tfdt)
+        if(tfdtBox.length < 12) return 0;
         let n = tfdtBox.slice(tfdtBox.length - 8)
-        return parseInt(n.toString("hex"), 16)
+        return parseInt(n.toString("hex"), 16) || 0
     } else {
         // tfdt version 0 (4byte)
         let end = tfdtBox.length - 4
-        return tfdtBox.readUInt32BE(end)
+        if(end < 0) return 0;
+        return tfdtBox.readUInt32BE(end) || 0
     }
 }
 
@@ -451,9 +471,15 @@ function getTimestampOffset(file) {
 // https://chromium.googlesource.com/chromium/src/media/+/master/formats/mp4/box_definitions.cc
 // https://mpeggroup.github.io/FileFormatConformance/?query=%3D%22trun%22
 function parseMp4Trun(file) {
+    if(!file || file.length < 12) return [];
     let trunBox = file.indexOf("trun")
+    if(trunBox === -1 || trunBox < 4) return [];
     let boxLength = file.readUInt32BE(trunBox - 4) - 4
-    trunBox = file.slice(trunBox + 4, trunBox + boxLength)
+    if(trunBox + 4 + boxLength > file.length) {
+        boxLength = file.length - (trunBox + 4)
+    }
+    trunBox = file.slice(trunBox + 4, trunBox + 4 + boxLength)
+    if(trunBox.length < 8) return [];
 
     let trunFlags = trunBox.readUInt32BE(0)
     let dataOffsetPresent = (trunFlags & 0x1) !== 0
@@ -483,8 +509,8 @@ function parseMp4Trun(file) {
       + sampleFlagsPresent
       + sampleCompositionTimeOffsetsPresent
     ) * 4
-    if(sampleSizePresent) {
-        while(cursor < boxLength) {
+    if(sampleSizePresent && bytesPerSegment > 0) {
+        while(cursor + bytesPerSegment <= trunBox.length) {
             let partBytes = trunBox.slice(cursor, cursor + bytesPerSegment)
             let partCursor = 0;
             if(partBytes && partBytes.length == bytesPerSegment) {
@@ -517,7 +543,6 @@ function parseMp4Trun(file) {
 
     if(durations.length >= 1) {
         durations.unshift(0)
-        avcPacketTimestamps = durations;
     }
 
     return allData
@@ -525,9 +550,15 @@ function parseMp4Trun(file) {
 
 function readSampleDuration(file) {
     // no durations from trun, read from tfhd
+    if(!file || file.length < 12) return null;
     let tfhdBox = file.indexOf("tfhd")
+    if(tfhdBox === -1 || tfhdBox < 4) return null;
     let tfhdLength = file.readUInt32BE(tfhdBox - 4) - 4
-    tfhdBox = file.slice(tfhdBox + 4, tfhdBox + tfhdLength)
+    if(tfhdBox + 4 + tfhdLength > file.length) {
+        tfhdLength = file.length - (tfhdBox + 4)
+    }
+    tfhdBox = file.slice(tfhdBox + 4, tfhdBox + 4 + tfhdLength)
+    if(tfhdBox.length < 8) return null;
     let tfhdCursor = 0;
     let tfhdFlags = tfhdBox.readUInt32BE(0)
     tfhdCursor += 8 // flags + track id
@@ -536,7 +567,6 @@ function readSampleDuration(file) {
     let defaultSampleDurationPresent = tfhdFlags & 0x8
     let defaultSampleSizePresent = tfhdFlags & 0x10
     let durationIsEmpty = tfhdFlags & 0x010000
-    let defaultBaseIsMoof = tfhdFlags & 0x020000
     if(!durationIsEmpty) {
         if(dataOffsetPresent) {
             tfhdCursor += 8
@@ -544,15 +574,11 @@ function readSampleDuration(file) {
         if(sampleDescriptionIndexPresent) {
             tfhdCursor += 4
         }
-        if(defaultSampleDurationPresent) {
-            // yesssss
+        if(defaultSampleDurationPresent && tfhdCursor + 4 <= tfhdBox.length) {
             return tfhdBox.readUInt32BE(tfhdCursor)
         }
-        // defaultSampleSize and defaultSampleFlags can be skipped
-    } else {
-        // what??
-        throw "no samples in this file?"
     }
+    return null;
 }
 
 const flvTools = {

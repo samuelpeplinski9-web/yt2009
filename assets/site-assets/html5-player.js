@@ -537,6 +537,16 @@ video.addEventListener("play", function() {
     }
 }, false)
 
+// video decoding/playback error recovery
+video.addEventListener("error", function(e) {
+    console.error("Video error event triggered", video.error)
+    if(window.sabrData && !videoStartedPlaying) {
+        // if SABR failed to decode initial stream, try falling back
+        var sabrlessUrl = "/watch" + location.href.split("/watch")[1] + "&unsabr=1";
+        showUnrecoverableError("Playback error occurred. <a href=\"" + sabrlessUrl + "\">Load without SABR</a> or <a href=\"/toggle_f\">Enable Flash</a>")
+    }
+}, false)
+
 // play/pause animation
 function flash_middle_btn(buttonType) {
     if(mainElement == document) return;
@@ -3000,7 +3010,7 @@ function requestSabr(offset, source, force) {
     function retryRequest(force) {
         sabrData.lastRequestFailCount++
         if((sabrData.lastRequestFailCount > 3 && force)
-        || (sabrData.lastRequestFailCount > 25) && !force) {
+        || (sabrData.lastRequestFailCount > 10) && !force) {
 			if(!videoStartedPlaying && !playingAsLive) {
 				var sabrlessUrl = "/watch" + location.href.split("/watch")[1]
 								+ "&unsabr=1";
@@ -3017,7 +3027,9 @@ function requestSabr(offset, source, force) {
             console.warn("last sabr request failed too many times! no recovery")
             return;
         }
-        requestSabr(offset, source, force)
+        setTimeout(function() {
+            requestSabr(offset, source, force)
+        }, 500)
     }
     r.open("GET", url.join(""))
     r.responseType = "arraybuffer"
@@ -3040,11 +3052,8 @@ function requestSabr(offset, source, force) {
             return;
         }
         if(r.status >= 400) {
-            // invalid response
-            showUnrecoverableError(
-                "there was a problem with the network response."
-                +" try reloading the page."
-            )
+            // retry on network error instead of immediate unrecoverable failure
+            retryRequest(r.status >= 500 || r.status === 404 || r.status === 403)
             return;
         }
 
@@ -3098,17 +3107,12 @@ function requestSabr(offset, source, force) {
 			// after video starts)
 			
 			sabrData.addedSegments = []
-			if(sabrData.videoBuffer.updating) {
-				try {sabrData.videoBuffer.abort()}catch(error){}
+			if(sabrData.videoBuffer && !sabrData.videoBuffer.updating) {
+				try {sabrData.videoBuffer.remove(0, video.duration || 999999)}catch(error){}
 			}
-			if(sabrData.audioBuffer.updating) {
-				try {sabrData.audioBuffer.abort()}catch(error){}
+			if(sabrData.audioBuffer && !sabrData.audioBuffer.updating) {
+				try {sabrData.audioBuffer.remove(0, video.duration || 999999)}catch(error){}
 			}
-			try {
-				sabrData.videoBuffer.remove(0,video.duration)
-				sabrData.audioBuffer.remove(0,video.duration)
-			}
-			catch(error) {}
 			sabrData.waitingSabrFetch = false;
 			sabrData.timedSabrFetchAborted = true;
 			
@@ -3121,15 +3125,19 @@ function requestSabr(offset, source, force) {
 			
 			function readyStart() {
 				sabrData.videoMime = r.getResponseHeader("x-yt2009-video-mime")
-				vStream = ms.addSourceBuffer(sabrData.videoMime)
-                if(sabrData.reinitVideoSourceCallback) {
-                    sabrData.reinitVideoSourceCallback(sabrData.videoMime)
+                try {
+                    vStream = ms.addSourceBuffer(sabrData.videoMime)
+                    if(sabrData.reinitVideoSourceCallback) {
+                        sabrData.reinitVideoSourceCallback(sabrData.videoMime)
+                    }
+                    aStream = ms.addSourceBuffer(sabrData.audioMime)
+                    sabrData.videoBuffer = vStream
+                    sabrData.audioBuffer = aStream
+                    sabrProcessParts()
+                    video.currentTime = videoTime;
+                } catch(err) {
+                    console.log("codec switch addSourceBuffer failed", err)
                 }
-				aStream = ms.addSourceBuffer(sabrData.audioMime)
-				sabrData.videoBuffer = vStream
-				sabrData.audioBuffer = aStream
-				sabrProcessParts()
-				video.currentTime = videoTime;
 			}
 
 			// init
@@ -3149,6 +3157,10 @@ function requestSabr(offset, source, force) {
         // parse x-yt2009-saber
         var partsExtracted = 0;
         var partsInResponse = parseInt(r.getResponseHeader("x-part-count"))
+        if(isNaN(partsInResponse) || partsInResponse < 0) {
+            retryRequest()
+            return;
+        }
         var s = r.response;
         var cursor = 14 // SABER-START
         
@@ -3176,15 +3188,18 @@ function requestSabr(offset, source, force) {
         sabrData.lastRequestFailCount = 0;
 
 		function sabrProcessParts() {
-			while(partsExtracted !== partsInResponse) {
+			while(partsExtracted < partsInResponse && cursor < s.byteLength) {
 				var partHeader = uint8tostring(
-					new Uint8Array(s.slice(cursor, cursor + 70))
+					new Uint8Array(s.slice(cursor, Math.min(s.byteLength, cursor + 70)))
 				)
+				if(partHeader.indexOf("//") === -1) break;
 				partHeader = partHeader.split("//")[1]
+				if(!partHeader) break;
 				var headerLength = ("//" + partHeader + "//").length
 
-				var partId = partHeader.split("SPART-\"")[1].split("\"")[0]
-				var plen = parseInt(partHeader.split("-CL=")[1])
+				var partId = (partHeader.split("SPART-\"")[1] || "").split("\"")[0]
+				var plen = parseInt((partHeader.split("-CL=")[1] || "0"))
+				if(!partId || isNaN(plen)) break;
 				var pdata = s.slice(
 					cursor + headerLength,
 					cursor + headerLength + plen
@@ -3624,12 +3639,35 @@ function initAsSabr() {
 
     // start once ready
     function readyStart() {
-		sabrData.videoMime = "video/mp4; codecs=\"avc1.4D4028\""
-		sabrData.audioMime = "audio/mp4; codecs=\"mp4a.40.2\""
-        vStream = ms.addSourceBuffer(sabrData.videoMime)
-        aStream = ms.addSourceBuffer(sabrData.audioMime)
-        sabrData.videoBuffer = vStream
-        sabrData.audioBuffer = aStream
+        var defaultVideoMime = "video/mp4; codecs=\"avc1.4D4028\""
+        var defaultAudioMime = "audio/mp4; codecs=\"mp4a.40.2\""
+        if(window.MediaSource && typeof MediaSource.isTypeSupported === "function") {
+            if(!MediaSource.isTypeSupported(defaultVideoMime)) {
+                if(MediaSource.isTypeSupported("video/mp4; codecs=\"avc1.42E01E\"")) {
+                    defaultVideoMime = "video/mp4; codecs=\"avc1.42E01E\""
+                } else if(MediaSource.isTypeSupported("video/mp4")) {
+                    defaultVideoMime = "video/mp4"
+                }
+            }
+            if(!MediaSource.isTypeSupported(defaultAudioMime)) {
+                if(MediaSource.isTypeSupported("audio/mp4")) {
+                    defaultAudioMime = "audio/mp4"
+                }
+            }
+        }
+		sabrData.videoMime = defaultVideoMime
+		sabrData.audioMime = defaultAudioMime
+        try {
+            vStream = ms.addSourceBuffer(sabrData.videoMime)
+            aStream = ms.addSourceBuffer(sabrData.audioMime)
+            sabrData.videoBuffer = vStream
+            sabrData.audioBuffer = aStream
+        }
+        catch(err) {
+            console.error("addSourceBuffer error", err)
+            showUnrecoverableError("Your browser could not initialize the video stream. <a href=\"/toggle_f\">Enable Flash</a>")
+            return;
+        }
         if(!playingAsLive) {
 			requestSabr(0, "TIMED")
 		} else {
@@ -3644,49 +3682,65 @@ function initAsSabr() {
 
     // buffer queue
     var vbq = setInterval(function() {
-        if(sabrData.appendQueue[0]) {
-            if(sabrData.appendCallback) {
+        if(!sabrData || !sabrData.rawMediaSource || sabrData.rawMediaSource.readyState !== "open") return;
+        if(sabrData.appendQueue && sabrData.appendQueue.length > 0) {
+            if(sabrData.appendCallback && sabrData.appendQueue[0]) {
                 sabrData.appendCallback(sabrData.appendQueue[0])
             }
-            if(sabrData.appendQueue[0].type == "audio"
-            && sabrData.audioBuffer && !sabrData.audioBuffer.updating) {
-                try {
-                    sabrData.audioBuffer.appendBuffer(
-                        sabrData.appendQueue[0].data
-                    )
+            // process audio chunk
+            for(var i = 0; i < sabrData.appendQueue.length; i++) {
+                var chunk = sabrData.appendQueue[i];
+                if(chunk.type == "audio" && sabrData.audioBuffer && !sabrData.audioBuffer.updating) {
+                    try {
+                        sabrData.audioBuffer.appendBuffer(chunk.data)
+                        sabrData.appendQueue.splice(i, 1)
+                    }
+                    catch(error) {
+                        if(error.name === "QuotaExceededError") {
+                            try {
+                                if(video.currentTime > 30) {
+                                    sabrData.audioBuffer.remove(0, video.currentTime - 30)
+                                }
+                            } catch(e){}
+                        } else {
+                            sabrData.tempCt = video.currentTime
+                            clearInterval(vbq)
+                            initAsSabr()
+                            console.log("SABR playback crash (audio)", error)
+                            return;
+                        }
+                    }
+                    break;
                 }
-                catch(error) {
-                    sabrData.tempCt = video.currentTime
-                    // try reinit player
-                    clearInterval(vbq)
-                    initAsSabr()
-                    console.log("SABR playback crash!!! info below")
-                    console.log("VID", error)
-                    console.log("^^reiniting")
-                    return;
+            }
+            // process video chunk
+            for(var j = 0; j < sabrData.appendQueue.length; j++) {
+                var vChunk = sabrData.appendQueue[j];
+                if(vChunk.type == "video" && sabrData.videoBuffer && !sabrData.videoBuffer.updating) {
+                    try {
+                        sabrData.videoBuffer.appendBuffer(vChunk.data)
+                        sabrData.appendQueue.splice(j, 1)
+                    }
+                    catch(error) {
+                        if(error.name === "QuotaExceededError") {
+                            try {
+                                if(video.currentTime > 30) {
+                                    sabrData.videoBuffer.remove(0, video.currentTime - 30)
+                                }
+                            } catch(e){}
+                        } else {
+                            sabrData.tempCt = video.currentTime
+                            clearInterval(vbq)
+                            initAsSabr()
+                            console.log("SABR playback crash (video)", error)
+                            return;
+                        }
+                    }
+                    break;
                 }
-                sabrData.appendQueue.shift()
-            } else if(sabrData.appendQueue[0].type == "video"
-            && sabrData.videoBuffer && !sabrData.videoBuffer.updating) {
-                try {
-                    sabrData.videoBuffer.appendBuffer(
-                        sabrData.appendQueue[0].data
-                    )
-                }
-                catch(error) {
-                    sabrData.tempCt = video.currentTime
-                    // try reinit player
-                    clearInterval(vbq)
-                    initAsSabr()
-                    console.log("SABR playback crash!!! info below")
-                    console.log("AUD", error)
-                    console.log("^^reiniting")
-                    return;
-                }
-                sabrData.appendQueue.shift()
             }
         }
-    }, 250)
+    }, 100)
 
     // watch for new buffer fetches
     video.addEventListener("timeupdate", function() {
@@ -3703,8 +3757,8 @@ function initAsSabr() {
         }
 
         if(video.currentTime > 120
-        && !sabrData.videoBuffer.updating
-        && !sabrData.audioBuffer.updating) {
+        && sabrData.videoBuffer && !sabrData.videoBuffer.updating
+        && sabrData.audioBuffer && !sabrData.audioBuffer.updating) {
             // don't keep much backwards buffer to not overfill
             try {
                 sabrData.videoBuffer.remove(0, video.currentTime - 120)
@@ -3728,7 +3782,7 @@ function initAsSabr() {
         if(currentRange && ((currentRange.end - c) < sabrData.readAhead
         && (currentRange.end - c) > 0.1
         && !(video.duration - currentRange.end <= 0.3))
-        && !sabrData.appendQueue[0]
+        && (!sabrData.appendQueue || !sabrData.appendQueue[0])
         && !playingAsLive) {
             //console.log("pull more sabr", Math.floor(currentRange.end * 1000))
             sabrData.sabrTimedCooldown = true;
@@ -3818,18 +3872,12 @@ function sabrQualityChanged(source) {
 	}
     // force refetch for new quality
     sabrData.addedSegments = []
-    //v.pause()
-    if(sabrData.videoBuffer.updating) {
-        try {sabrData.videoBuffer.abort()}catch(error){}
+    if(sabrData.videoBuffer && !sabrData.videoBuffer.updating) {
+        try {sabrData.videoBuffer.remove(0, video.duration || 999999)}catch(error){}
     }
-    if(sabrData.audioBuffer.updating) {
-        try {sabrData.audioBuffer.abort()}catch(error){}
+    if(sabrData.audioBuffer && !sabrData.audioBuffer.updating) {
+        try {sabrData.audioBuffer.remove(0, video.duration || 999999)}catch(error){}
     }
-    try {
-        sabrData.videoBuffer.remove(0,video.duration)
-        sabrData.audioBuffer.remove(0,video.duration)
-    }
-    catch(error) {}
     sabrData.waitingSabrFetch = false;
     sabrData.timedSabrFetchAborted = true;
     var c = video.currentTime

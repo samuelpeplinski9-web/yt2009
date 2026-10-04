@@ -178,8 +178,8 @@ if(!loginData.yExpire) {
                 msg = msg.replace("$1", "(no reason provided)")
                 console.log(msg)
             }
-        })
-    })
+        }).catch(err => {})
+    }).catch(err => {})
 } else {
     gredir_work = false;
     testSignIn()
