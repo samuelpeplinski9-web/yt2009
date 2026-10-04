@@ -33,12 +33,13 @@ def logline(s):
     print(s, flush=True)
 
 
-def fetch_raw(full_url, tries=4):
+def fetch_raw(full_url, tries=8):
     last = "?"
     for attempt in range(tries):
         req = urllib.request.Request(full_url, headers={
             "User-Agent": UA,
             "Accept-Encoding": "gzip",
+            "Connection": "close",
         })
         try:
             with urllib.request.urlopen(req, timeout=90) as r:
@@ -54,24 +55,31 @@ def fetch_raw(full_url, tries=4):
             last = str(e.code)
             if e.code == 404:
                 return None, last
-            time.sleep(6 * (attempt + 1))
+            wait = min(120, 20 * (attempt + 1))
+            ra = e.headers.get("Retry-After") if e.headers else None
+            if ra:
+                try:
+                    wait = min(180, max(wait, int(ra)))
+                except ValueError:
+                    pass
+            time.sleep(wait)
         except Exception as e:
             last = repr(e)
-            time.sleep(6 * (attempt + 1))
+            time.sleep(min(120, 20 * (attempt + 1)))
     return None, last
 
 
-def fetch(url):
+def fetch(url, tries=8):
     """try several wayback flavors/timestamps for a url"""
     attempts = []
-    for ts in (TS, "20120622", "20120601", "20120801", "2012"):
+    for ts in (TS, "20120601", "20120801"):
         attempts.append("https://web.archive.org/web/%sid_/%s" % (ts, url))
-    attempts.append("https://web.archive.org/web/%s/%s" % (TS, url))
     for a in attempts:
-        data, status = fetch_raw(a)
+        data, status = fetch_raw(a, tries)
         if data is not None:
             return data, a
         logline("  try %s -> %s" % (a, status))
+        tries = 3  # fallback flavors get fewer tries
     return None, None
 
 
@@ -165,8 +173,8 @@ def main():
     count = 0
     while queue and count < MAX_FILES:
         url, depth = queue.pop(0)
-        time.sleep(0.5)
-        data, src = fetch(url)
+        time.sleep(2)
+        data, src = fetch(url, 5)
         count += 1
         if data is None:
             logline("MISS %s" % url)
