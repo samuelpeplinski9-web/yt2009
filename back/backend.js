@@ -105,7 +105,7 @@ if(config.env == "dev") {
     let launchTime = ""
     let date = new Date();
     launchTime = `launch time: ${date.getHours()}:${date.getMinutes() > 9 ? date.getMinutes() : "0" + date.getMinutes()}`
-    app.listen(config.port, () => {
+    app.listen(config.port, "0.0.0.0", () => {
         console.log(`
     ==========
 
@@ -123,7 +123,7 @@ if(config.env == "dev") {
     && config.SSLKeyPath) {
         onPortString += ` for HTTP\n    on port :${config.SSLPort} for HTTPS`
     }
-    app.listen(config.port, () => {
+    app.listen(config.port, "0.0.0.0", () => {
         console.log(`
     ==========
 

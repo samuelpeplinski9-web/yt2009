@@ -84,7 +84,8 @@ if(EXTRA_RISK_BLOCK && !frequentRestartEnvironmentDisablePotgen) {
             }
             catch(error){}
             visitorCreatedOnce = true;
-        })})
+        }).catch(err => {})
+    }).catch(err => {})
     }
     if(EXTRA_RISK_AGGRESSIVE_VISITOR) {
         let cr = setInterval(() => {
