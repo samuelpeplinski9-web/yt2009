@@ -387,23 +387,38 @@ module.exports = {
         try {
             itemsPath.forEach(container => {
                 // actual results
-                if(container.itemSectionRenderer) {
+                if(container.itemSectionRenderer && container.itemSectionRenderer.contents) {
                     container.itemSectionRenderer.contents.forEach(r => {
-                        results.push(r)
+                        if(r.videoRenderer || r.channelRenderer || r.playlistRenderer) {
+                            results.push(r)
+                        } else if(r.shelfRenderer && r.shelfRenderer.content) {
+                            let content = r.shelfRenderer.content;
+                            if(content.verticalListRenderer && content.verticalListRenderer.items) {
+                                content.verticalListRenderer.items.forEach(sr => results.push(sr))
+                            } else if(content.expandedShelfContentsRenderer && content.expandedShelfContentsRenderer.items) {
+                                content.expandedShelfContentsRenderer.items.forEach(sr => results.push(sr))
+                            }
+                        } else if(r.richItemRenderer && r.richItemRenderer.content) {
+                            results.push(r.richItemRenderer.content)
+                        } else if(r.compactVideoRenderer) {
+                            results.push({ "videoRenderer": r.compactVideoRenderer })
+                        }
                     })
                 }
 
                 // continuation token
                 if(container.continuationItemRenderer) {
-                    resultsToCallback.push({
-                        "type": "continuation",
-                        "token": container.continuationItemRenderer
-                                .continuationEndpoint.continuationCommand
-                                .token,
-                        "endpoint": container.continuationItemRenderer
-                                    .continuationEndpoint.commandMetadata
-                                    .webCommandMetadata.apiUrl
-                    })
+                    try {
+                        resultsToCallback.push({
+                            "type": "continuation",
+                            "token": container.continuationItemRenderer
+                                    .continuationEndpoint.continuationCommand
+                                    .token,
+                            "endpoint": container.continuationItemRenderer
+                                        .continuationEndpoint.commandMetadata
+                                        .webCommandMetadata.apiUrl
+                        })
+                    } catch(e) {}
                 }
             })
         }
@@ -426,20 +441,37 @@ module.exports = {
                 result = result.videoRenderer
                 let uploadDate = ""
                 try {
-                    uploadDate = this.backportDate(
-						result.publishedTimeText.simpleText
-					)
+                    if(result.publishedTimeText && result.publishedTimeText.simpleText) {
+                        uploadDate = this.backportDate(
+                            result.publishedTimeText.simpleText
+                        )
+                    }
                 }
                 catch(error) {}
                 let description = ""
                 try {
-                    result.detailedMetadataSnippets[0]
-                    .snippetText.runs.forEach(run => {
-                        description += run.text
-                    })
+                    if(result.detailedMetadataSnippets && result.detailedMetadataSnippets[0] && result.detailedMetadataSnippets[0].snippetText && result.detailedMetadataSnippets[0].snippetText.runs) {
+                        result.detailedMetadataSnippets[0]
+                        .snippetText.runs.forEach(run => {
+                            description += run.text
+                        })
+                    } else if(result.descriptionSnippet && result.descriptionSnippet.runs) {
+                        result.descriptionSnippet.runs.forEach(run => {
+                            description += run.text
+                        })
+                    }
                 }
                 catch(error) {}
                 try {
+                    let author_name = "";
+                    if(result.ownerText && result.ownerText.runs && result.ownerText.runs[0]) {
+                        author_name = result.ownerText.runs[0].text;
+                    } else if(result.longBylineText && result.longBylineText.runs && result.longBylineText.runs[0]) {
+                        author_name = result.longBylineText.runs[0].text;
+                    } else if(result.shortBylineText && result.shortBylineText.runs && result.shortBylineText.runs[0]) {
+                        author_name = result.shortBylineText.runs[0].text;
+                    }
+
                     let author_url = "";
                     try {
                         author_url = result.ownerText.runs[0]
@@ -447,9 +479,14 @@ module.exports = {
                                      .canonicalBaseUrl;
                     }
                     catch(error) {
-                        author_url = "/channel/" + JSON.stringify(
-                            result.ownerText.runs[0].navigationEndpoint
-                        ).split(`browseId":"`)[1].split(`"`)[0]
+                        try {
+                            author_url = "/channel/" + JSON.stringify(
+                                (result.ownerText && result.ownerText.runs[0] && result.ownerText.runs[0].navigationEndpoint) ||
+                                (result.longBylineText && result.longBylineText.runs[0] && result.longBylineText.runs[0].navigationEndpoint) || {}
+                            ).split(`browseId":"`)[1].split(`"`)[0]
+                        } catch(e) {
+                            author_url = "/user/" + (author_name || "YouTubeUser")
+                        }
                     }
 
                     // check for author urls
@@ -461,9 +498,11 @@ module.exports = {
                     if(!author_url.startsWith("/channel")
                     && !author_url.startsWith("/user")
                     && !author_url.startsWith("/c/")) {
-                        author_url = "/channel/" + result.ownerText.runs[0]
-                                                    .navigationEndpoint
-                                                    .browseEndpoint.browseId
+                        try {
+                            author_url = "/channel/" + result.ownerText.runs[0]
+                                                        .navigationEndpoint
+                                                        .browseEndpoint.browseId
+                        } catch(e) {}
                     }
 
                     let verified = false;
@@ -498,10 +537,14 @@ module.exports = {
                     if(result.viewCountText
                     && result.viewCountText.simpleText) {
                         viewCount = result.viewCountText.simpleText
+                    } else if(result.shortViewCountText && result.shortViewCountText.simpleText) {
+                        viewCount = result.shortViewCountText.simpleText
                     }
 
                     if(result.lengthText && result.lengthText.simpleText) {
                         time = result.lengthText.simpleText
+                    } else if(result.lengthText && result.lengthText.runs && result.lengthText.runs[0]) {
+                        time = result.lengthText.runs[0].text
                     }
 
                     let resultType = (live && !time ? "live-video" : "video")
@@ -513,24 +556,35 @@ module.exports = {
                         uploadDate = ""
                     }
 
-                    // add video
-                    resultsToCallback.push({
-                        "type": resultType,
-                        "id": result.videoId,
-                        "title": result.title.runs[0].text,
-                        "views": viewCount,
-                        "thumbnail": "http://i.ytimg.com/vi/"
-                                    + result.videoId
-                                    + "/hqdefault.jpg",
-                        "description": description,
-                        "time": time,
-                        "author_name": result.ownerText.runs[0].text,
-                        "author_url": author_url,
-                        "author_handle": userHandle,
-                        "upload": uploadDate,
-                        "verified": verified,
-                        "artist": artist
-                    })
+                    let title = ""
+                    if(result.title && result.title.runs && result.title.runs[0]) {
+                        title = result.title.runs[0].text;
+                    } else if(result.title && result.title.simpleText) {
+                        title = result.title.simpleText;
+                    } else if(result.title && result.title.accessibility && result.title.accessibility.accessibilityData) {
+                        title = result.title.accessibility.accessibilityData.label;
+                    }
+
+                    if(result.videoId && title) {
+                        // add video
+                        resultsToCallback.push({
+                            "type": resultType,
+                            "id": result.videoId,
+                            "title": title,
+                            "views": viewCount,
+                            "thumbnail": "http://i.ytimg.com/vi/"
+                                        + result.videoId
+                                        + "/hqdefault.jpg",
+                            "description": description,
+                            "time": time,
+                            "author_name": author_name,
+                            "author_url": author_url,
+                            "author_handle": userHandle,
+                            "upload": uploadDate,
+                            "verified": verified,
+                            "artist": artist
+                        })
+                    }
                 }
                 catch(error) {
                     console.log(error)

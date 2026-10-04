@@ -4471,33 +4471,80 @@ if(fs.existsSync("../wordlist.txt")) {
     })
 }
 
+let localWordlist = null;
+function getLocalSuggestions(q) {
+    if(!localWordlist) {
+        try {
+            if(fs.existsSync("../wordlist.txt")) {
+                localWordlist = fs.readFileSync("../wordlist.txt", "utf8").split("\n").map(s => s.trim()).filter(Boolean);
+            } else if(fs.existsSync("./wordlist.txt")) {
+                localWordlist = fs.readFileSync("./wordlist.txt", "utf8").split("\n").map(s => s.trim()).filter(Boolean);
+            } else {
+                localWordlist = [];
+            }
+        } catch(e) {
+            localWordlist = [];
+        }
+    }
+    let qLower = (q || "").toLowerCase().trim();
+    if(!qLower) return "";
+    let matches = localWordlist.filter(w => w.toLowerCase().includes(qLower)).slice(0, 10);
+    matches = matches.sort((a, b) => a.length - b.length);
+    let response = "";
+    matches.forEach(m => {
+        response += `
+        <tr class="google-ac-a">
+            <td class="google-ac-c">${m}</td>
+            <td class="google-ac-d"></td>
+        </tr>`
+    });
+    return response;
+}
+
 function pullNewSuggestions(q, callback) {
     const fetch = require("node-fetch")
-    fetch("http://suggestqueries.google.com/complete/search?ds=yt&client=androidyt&hjson=t&oe=UTF-8&q=" + q, {
-        "headers": yt2009_constant.headers
-    }).catch(e => {
-        callback("")
-    }).then(r => {r.json().then(r => {
-        let suggestions = []
-        let response = ""
-        r.forEach(element => {
-            if(typeof(element) == "object"
-            && element.length) {
-                element.forEach(s => {
-                    suggestions.push(s[0].replace(/\p{Other_Symbol}/gui, ""))
+    fetch("http://suggestqueries.google.com/complete/search?ds=yt&client=androidyt&hjson=t&oe=UTF-8&q=" + encodeURIComponent(q), {
+        "headers": yt2009_constant.headers,
+        "timeout": 3000
+    }).then(r => {
+        if(!r || !r.ok) {
+            callback(getLocalSuggestions(q))
+            return;
+        }
+        r.json().then(r => {
+            let suggestions = []
+            let response = ""
+            if(Array.isArray(r)) {
+                r.forEach(element => {
+                    if(typeof(element) == "object"
+                    && element && element.length) {
+                        element.forEach(s => {
+                            if(s && s[0]) {
+                                suggestions.push(s[0].replace(/\p{Other_Symbol}/gui, ""))
+                            }
+                        })
+                    }
                 })
             }
+            if(suggestions.length === 0) {
+                callback(getLocalSuggestions(q))
+                return;
+            }
+            suggestions = suggestions.sort((a, b) => {return a.length - b.length})
+            suggestions.forEach(m => {
+                response += `
+                <tr class="google-ac-a">
+                    <td class="google-ac-c">${m}</td>
+                    <td class="google-ac-d"></td>
+                </tr>`
+            })
+            callback(response)
+        }).catch(e => {
+            callback(getLocalSuggestions(q))
         })
-        suggestions = suggestions.sort((a, b) => {return a.length - b.length})
-        suggestions.forEach(m => {
-            response += `
-            <tr class="google-ac-a">
-                <td class="google-ac-c">${m}</td>
-                <td class="google-ac-d"></td>
-            </tr>`
-        })
-        callback(response)
-    })})
+    }).catch(e => {
+        callback(getLocalSuggestions(q))
+    })
 }
 
 /*
