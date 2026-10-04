@@ -1,7 +1,72 @@
-  try https://web.archive.org/web/20120622093607id_/http://www.youtube.com/leanback -> 429
-  try https://web.archive.org/web/20120622id_/http://www.youtube.com/leanback -> URLError(ConnectionRefusedError(111, 'Connection refused'))
-  try https://web.archive.org/web/20120601id_/http://www.youtube.com/leanback -> 429
-  try https://web.archive.org/web/20120801id_/http://www.youtube.com/leanback -> 429
-  try https://web.archive.org/web/2012id_/http://www.youtube.com/leanback -> URLError(ConnectionRefusedError(111, 'Connection refused'))
-  try https://web.archive.org/web/20120622093607/http://www.youtube.com/leanback -> 429
-FATAL: could not fetch start page in any flavor
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 429
+  try ts=20120801 -> 429
+  try ts=2012 -> 429
+MISS http://www.gstatic.com/youtube/leanback/3f68892c/javascript/tv-html5.js
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 429
+OK   http://www.gstatic.com/youtube/leanback/3f68892c/stylesheet/tv-html5.css (425242 bytes)
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 429
+  try ts=20120801 -> 429
+  try ts=2012 -> 429
+MISS http://s.ytimg.com/yt/jsbin/html5player-vflBfju3R.js
+  try ts=20120622093607 -> URLError(ConnectionRefusedError(111, 'Connection refused'))
+  try ts=20120601 -> 429
+  try ts=20120801 -> 429
+  try ts=2012 -> URLError(ConnectionRefusedError(111, 'Connection refused'))
+MISS http://s.ytimg.com/yt/cssbin/www-player-vfltUaqw8.css
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 429
+  try ts=20120801 -> 429
+  try ts=2012 -> 429
+MISS http://s.ytimg.com/yt/swfbin/watch_as3-vflTL1Rpm.swf
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> URLError(ConnectionRefusedError(111, 'Connection refused'))
+OK   http://s.ytimg.com/yt/swfbin/cps-vflDeURDJ.swf (151799 bytes)
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 429
+  try ts=20120801 -> 429
+  try ts=2012 -> 429
+MISS http://s.ytimg.com/yt/img/pixel-vfl3z5WfW.gif
+  try ts=20120622093607 -> 429
+OK   http://s.ytimg.com/yt/img/no_thumbnail-vfl4t3-4R.jpg (1097 bytes)
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 429
+  try ts=20120801 -> 429
+  try ts=2012 -> URLError(ConnectionRefusedError(111, 'Connection refused'))
+MISS http://s.ytimg.com/yt/img/no_videos_140-vfl5AhOQY.png
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> URLError(TimeoutError('_ssl.c:983: The handshake operation timed out'))
+  try ts=20120801 -> URLError(ConnectionRefusedError(111, 'Connection refused'))
+  try ts=2012 -> URLError(TimeoutError('_ssl.c:983: The handshake operation timed out'))
+MISS http://fonts.googleapis.com/css?family=Droid+Sans+TV:regular,bold
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 404
+  try ts=20120801 -> 404
+  try ts=2012 -> 429
+MISS http://www.gstatic.com/imgbin/www-refresh.png
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 404
+  try ts=20120801 -> 429
+  try ts=2012 -> 404
+MISS http://www.gstatic.com/imgbin/www-sharing.png
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 429
+  try ts=20120801 -> 429
+  try ts=2012 -> 404
+MISS http://www.gstatic.com/img/loader.gif
+  try ts=20120622093607 -> 404
+  try ts=20120601 -> 429
+  try ts=20120801 -> 429
+  try ts=2012 -> 429
+MISS http://www.gstatic.com/imgbin/player-common.png
+  try ts=20120622093607 -> 429
+  try ts=20120601 -> 404
+  try ts=20120801 -> 404
+  try ts=2012 -> 429
+MISS http://www.gstatic.com/imgbin/player-dark.png
+  try ts=20120622093607 -> deadline
+MISS http://www.gstatic.com/img/html5_play_button.png
+deadline reached
+pass 1 done, 13 failed, retrying
