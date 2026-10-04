@@ -101,6 +101,39 @@ app.use(express.raw({
     "limit": fileLimit + "mb"
 }))
 
+// 2011/2012 leanback (html5) gdata compat:
+// the tv ui requests feeds with alt=json-in-script (jsonp),
+// map those onto the existing alt=json gdata pipeline and make
+// sure responses get wrapped in the jsonp callback when the
+// downstream handler doesn't do it itself.
+function leanbackJsonpCompat(req, res, next) {
+    if(req.query && req.query.alt == "json-in-script") {
+        req.query.alt = "json"
+    }
+    if(req.query && req.query.callback
+    && /^[\w.$]+$/.test(req.query.callback)) {
+        let jsonpCallback = req.query.callback;
+        let bareSend = res.send.bind(res)
+        res.send = function(body) {
+            let s = body;
+            if(typeof s == "object" && !Buffer.isBuffer(s)) {
+                s = JSON.stringify(s)
+            }
+            s = String(s)
+            if(!s.startsWith(jsonpCallback + "(")
+            && (s.startsWith("{") || s.startsWith("["))) {
+                res.set("content-type", "text/javascript")
+                s = jsonpCallback + "(" + s + ")"
+            }
+            return bareSend(s)
+        }
+    }
+    next()
+}
+app.use("/feeds/api", leanbackJsonpCompat)
+app.use("/leanback_ajax", leanbackJsonpCompat)
+app.use("/search_ajax", leanbackJsonpCompat)
+
 if(config.env == "dev") {
     let launchTime = ""
     let date = new Date();
@@ -1324,6 +1357,169 @@ app.get("/apiplayer", (req, res) => {
 
 app.get("/swf/apiplayer.swf", (req, res) => {
     res.redirect("/xl/apiplayer-f.swf")
+})
+
+/*
+======
+2011/2012 html5 leanback playback
+the tv-html5 ui calls /get_video_info?video_id=..&html5=1&asv=3&el=leanback
+and expects a proper url_encoded_fmt_stream_map key (plus rvs for the
+related videos rail). resolve it through this instance's own
+playback endpoints (/exp_hd, /get_480, /get_video).
+======
+*/
+app.get("/get_video_info", (req, res, next) => {
+    if(!req.query.video_id
+    || req.query.html5 != "1"
+    || req.query.el != "leanback") {
+        next()
+        return;
+    }
+    if(!yt2009trusted.get_video_info_eligible(req)) {
+        res.send([
+            "status=fail",
+            "errorcode=100",
+            "suberrorcode=8",
+            "reason=ratelimited."
+        ].join("&"))
+        return;
+    }
+
+    let id = req.query.video_id.split("/mp4")[0].substring(0, 11)
+
+    // leanback watch history cookie (same behavior as flash leanback)
+    let history = ""
+    if(req.headers.cookie
+    && req.headers.cookie.includes("leanback_history=")) {
+        history = req.headers.cookie
+                  .split("leanback_history=")[1].split(";")[0]
+    }
+    history = history.split(":")
+    if(history.length >= 3) {
+        history.pop()
+    }
+    history.unshift(id)
+    res.set("set-cookie", [
+        `leanback_history=${history.join(":")}; `,
+        `Path=/; `,
+        `Expires=Fri, 31 Dec 2066 23:59:59 GMT`
+    ].join(""))
+
+    // same data path as the flash leanback /get_video_info:
+    // instance cache first, bare player parse otherwise
+    function getLeanbackVideoData(callback) {
+        if(yt2009.get_cache_video(id)
+        && yt2009.get_cache_video(id).title) {
+            callback(yt2009.get_cache_video(id))
+        } else {
+            yt2009_utils.pullBarePlayer(id, (data) => {
+                try {
+                    data = yt2009.miniParse(data)
+                }
+                catch(error) {
+                    data = false;
+                }
+                callback(data)
+            })
+        }
+    }
+    getLeanbackVideoData((data) => {
+        if(!data || !data.title || !data.id || data.unplayable) {
+            res.send([
+                "status=fail",
+                "errorcode=100",
+                "suberrorcode=8",
+                "reason=This video is unavailable."
+            ].join("&"))
+            return;
+        }
+        let longVid = ((data.length || 0) >= 60 * 30)
+        let qualities = JSON.parse(JSON.stringify(data.qualities || []))
+        if(!yt2009_utils.isAuthorized(req)) {
+            qualities = qualities.filter(s => {
+                return s && parseInt(s) < 1080
+            })
+        }
+
+        // build the stream map with relative urls so playback works
+        // regardless of how the instance is accessed (ip, domain, proxy)
+        let streams = []
+        function addStream(itag, quality, url) {
+            streams.push([
+                "type=" + encodeURIComponent(
+                    `video/mp4; codecs="avc1.64001F, mp4a.40.2"`
+                ),
+                "itag=" + itag,
+                "url=" + encodeURIComponent(url),
+                "quality=" + quality
+            ].join("&"))
+        }
+        if(qualities.includes("1080p")) {
+            addStream(37, "hd1080",
+                `/exp_hd?video_id=${id}&fhd=1`
+                + yt2009trusted.urlContext(id, "PLAYBACK_FHD", longVid))
+        }
+        if(qualities.includes("720p")) {
+            addStream(22, "hd720",
+                `/exp_hd?video_id=${id}`
+                + yt2009trusted.urlContext(id, "PLAYBACK_HD", longVid))
+        }
+        if(qualities.includes("480p")) {
+            addStream(35, "large",
+                `/get_480?video_id=${id}`
+                + yt2009trusted.urlContext(id, "PLAYBACK_HQ", longVid))
+        }
+        addStream(18, "medium",
+            `/get_video?video_id=${id}/mp4`
+            + yt2009trusted.urlContext(id, "PLAYBACK_STD", longVid))
+
+        // related videos ("rvs") for the leanback related rail
+        let rvs = []
+        if(data.related && data.related.forEach) {
+            data.related.forEach(r => {
+                if(!r.id) return;
+                rvs.push([
+                    "id=" + r.id,
+                    "title=" + encodeURIComponent(r.title || ""),
+                    "author=" + encodeURIComponent(r.creatorName || ""),
+                    "length_seconds=" + yt2009_utils.time_to_seconds(
+                        r.length || "0:00"
+                    ),
+                    "view_count=" + encodeURIComponent(r.views || "")
+                ].join("&"))
+            })
+        }
+
+        let responseParams = [
+            "status=ok",
+            "video_id=" + id,
+            "title=" + encodeURIComponent(data.title),
+            "author=" + encodeURIComponent(data.author_name || ""),
+            "length_seconds=" + (data.length || 0),
+            "keywords=" + encodeURIComponent((data.tags || []).join(",")),
+            "thumbnail_url=" + encodeURIComponent(
+                yt2009_utils.getThumbUrl(id, req)
+            ),
+            "avg_rating=5.0",
+            "allow_ratings=1",
+            "allow_embed=1",
+            "has_cc=False",
+            "hl=en",
+            "plid=leanback2011",
+            "token=amogus",
+            "ftoken=",
+            "url_encoded_fmt_stream_map=" + encodeURIComponent(
+                streams.join(",")
+            )
+        ]
+        if(rvs.length >= 1) {
+            responseParams.push(
+                "rvs=" + encodeURIComponent(rvs.join(","))
+            )
+        }
+        res.set("content-type", "application/x-www-form-urlencoded")
+        res.send(responseParams.join("&"))
+    })
 })
 
 app.get("/get_video_info", (req, res) => {
@@ -2827,6 +3023,199 @@ leanbackEndpoints.forEach(lbe => {
         }
         if(yt2009_utils.isRatelimited(req, res)) return;
         res.send(leanback)
+    })
+})
+
+/*
+======
+2011/2012 html5 leanback (/2011leanback)
+archived frontend (wayback machine, 2012-06-22 capture of
+youtube.com/leanback, gstatic build 3f68892c) served statically,
+with searches/feeds/playback wired into this instance's
+gdata api data pipeline.
+======
+*/
+let leanback2011Endpoints = [
+    "/2011leanback", "/2011leanback/", "/2011leanback/index.html"
+]
+let leanback2011 = false;
+try {
+    leanback2011 = fs.readFileSync("../2011leanback/index.html").toString()
+}
+catch(error) {console.log("[2011leanback] index.html missing")}
+leanback2011Endpoints.forEach(lbe => {
+    app.get(lbe, (req, res) => {
+        if(!yt2009_utils.isAuthorized(req)) {
+            res.redirect("/unauth.htm")
+            return;
+        }
+        if(yt2009_utils.isRatelimited(req, res)) return;
+        if(!leanback2011) {
+            res.status(404).send("2011leanback assets missing")
+            return;
+        }
+        res.send(leanback2011)
+    })
+})
+app.use("/2011leanback", express.static("../2011leanback"))
+
+// html5 player template fragment requested by the tv ui's swf_config
+app.get("/html5_player_template", (req, res) => {
+    res.sendFile("2011leanback/html5_player_template.html", {
+        "root": "../"
+    }, (error) => {
+        if(error && !res.headersSent) {res.status(404).send("")}
+    })
+})
+
+// oauth + lounge remote iframes: not supported, serve quiet stubs
+// so the tv ui boots without errors
+app.get("/leanback_oauth", (req, res) => {
+    res.send("<html><body></body></html>")
+})
+app.get("/api/lounge/data/iframe", (req, res) => {
+    res.send("<html><body></body></html>")
+})
+
+// search used by the 2012 tv ui:
+// /search_ajax?style=json&page=N&quality=all|HD&search_query=..
+// resolved through the instance's search pipeline (yt2009search)
+app.get("/search_ajax", (req, res) => {
+    if(!req.query.search_query) {
+        res.status(400).send({"total": 0, "videos": []})
+        return;
+    }
+    let query = req.query.search_query;
+    let page = parseInt(req.query.page || "1")
+    if(isNaN(page)) {page = 1;}
+    let searchParams = {}
+    if(page > 1) {
+        searchParams.page = page;
+    }
+    if(req.query.quality == "HD") {
+        searchParams.high_definition = true;
+        searchParams.page = page;
+    }
+    res.status(200)
+    yt2009_search.get_search(query, "", searchParams, (data => {
+        let formattedResults = []
+        let resultCount = 20;
+        data.forEach(r => {
+            if(r.type == "video") {
+                let created = Math.floor(
+                    yt2009_utils.relativeToAbsoluteApprox(r.upload)
+                    / 1000
+                )
+                if(isNaN(created)) {
+                    created = Math.floor(new Date().getTime() / 1000)
+                }
+                formattedResults.push({
+                    "title": r.title,
+                    "id": r.id,
+                    "encrypted_id": r.id,
+                    "thumbnail": yt2009_utils.getThumbUrl(r.id, req),
+                    "views": yt2009_utils.bareCount(r.views).toString(),
+                    "duration": yt2009_utils.time_to_seconds(
+                        r.time || "0:00"
+                    ),
+                    "author": r.author_name,
+                    "user_id": (r.author_url || "").split("channel/")[1]
+                               || "",
+                    "time_created": created,
+                    "description": r.description || "",
+                    "likes": 0,
+                    "dislikes": 0,
+                    "is_hd": false,
+                    "is_cc": false,
+                    "watched": false
+                })
+            } else if(r.type == "metadata") {
+                resultCount = r.resultCount;
+            }
+        })
+
+        res.send({
+            "total": resultCount,
+            "videos": formattedResults
+        })
+    }), yt2009_utils.get_used_token(req), false)
+})
+
+// gdata videos batch lookup used by the 2012 tv ui
+// (watch later/history rails resolving plain video ids)
+app.all("/feeds/api/videos/batch", (req, res) => {
+    let ids = (req.query.video_ids || "").split(",")
+              .filter(s => {return s.length >= 1})
+              .slice(0, 50)
+    let callback = req.query.callback || false;
+    let entries = []
+    let processed = 0;
+    function entryFor(id, data) {
+        return {
+            "batch$id": {"$t": id},
+            "batch$status": {"code": data ? 200 : 404},
+            "id": {"$t": "tag:youtube.com,2008:video:" + id},
+            "title": {"$t": data ? data.title : ""},
+            "author": [{"name": {"$t": data
+                ? (data.author_name || "") : ""}}],
+            "media$group": {
+                "yt$videoid": {"$t": id},
+                "media$title": {"$t": data ? data.title : "",
+                                "type": "plain"},
+                "media$description": {"$t": data
+                    ? (data.description || "") : ""},
+                "media$credit": [{
+                    "$t": data ? (data.author_name || "") : "",
+                    "role": "uploader",
+                    "yt$display": data ? (data.author_name || "") : ""
+                }],
+                "media$thumbnail": [{
+                    "height": 360, "width": 480, "time": "00:00:00",
+                    "url": yt2009_utils.getThumbUrl(id, req)
+                }],
+                "yt$duration": {"seconds": data ? (data.length || 0) : 0}
+            }
+        }
+    }
+    function finish() {
+        let response = {
+            "version": "1.0",
+            "encoding": "UTF-8",
+            "feed": {
+                "entry": entries,
+                "title": {"$t": "Batch"},
+                "id": {"$t": "tag:youtube.com,2008:videos:batch"}
+            }
+        }
+        res.set("content-type", "text/plain")
+        if(callback) {
+            res.send(callback + "(" + JSON.stringify(response) + ")")
+        } else {
+            res.send(JSON.stringify(response))
+        }
+    }
+    if(ids.length == 0) {finish(); return;}
+    ids.forEach(id => {
+        id = id.substring(0, 11)
+        let cached = yt2009.get_cache_video(id)
+        if(cached && cached.title) {
+            entries.push(entryFor(id, cached))
+            processed++
+            if(processed == ids.length) {finish()}
+        } else {
+            yt2009_utils.pullBarePlayer(id, (data) => {
+                try {
+                    data = yt2009.miniParse(data)
+                    entries.push(entryFor(id,
+                        (data && data.title) ? data : false))
+                }
+                catch(error) {
+                    entries.push(entryFor(id, false))
+                }
+                processed++
+                if(processed == ids.length) {finish()}
+            })
+        }
     })
 })
 
@@ -6323,6 +6712,16 @@ app.get("/leanback_ajax", (req, res) => {
     if(req.query.action_featured) {
         let r = fs.readFileSync("../assets/site-assets/leanback_ajax.json").toString()
         res.send(r)
+        return;
+    }
+    // 2011/2012 html5 leanback actions: not signed in, respond with
+    // graceful empty structures so the tv ui keeps working
+    if(req.query.action_user_info) {
+        res.send({"users": []})
+        return;
+    }
+    if(req.query.action_user_playlists) {
+        res.send({"playlists": []})
         return;
     }
     res.status(200).send("")

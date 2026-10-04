@@ -1,0 +1,12 @@
+@font-face {
+  font-family: 'Droid Sans TV';
+  font-style: normal;
+  font-weight: normal;
+  src: url(/2011leanback/fonts/DroidSansTV.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Droid Sans TV';
+  font-style: normal;
+  font-weight: bold;
+  src: url(/2011leanback/fonts/DroidSansTV-Bold.ttf) format('truetype');
+}
