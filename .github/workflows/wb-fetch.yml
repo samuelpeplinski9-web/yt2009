@@ -1,0 +1,22 @@
+name: wb-fetch
+on:
+  push:
+    branches: ["arena/01a106ca-yt2009"]
+    paths: [".wb/**"]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download wayback leanback assets
+        run: python3 .wb/fetch_wayback.py
+      - name: Commit results back to branch
+        run: |
+          git config user.name "wb-fetch-bot"
+          git config user.email "actions@github.com"
+          git add -f 2011leanback_raw
+          git commit -m "wayback 2012 leanback raw assets (automated fetch)" || exit 0
+          git pull --rebase origin ${GITHUB_REF_NAME}
+          git push origin HEAD:${GITHUB_REF_NAME}
