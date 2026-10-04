@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Git identity
+        run: |
+          git config user.name "wb-fetch-bot"
+          git config user.email "actions@github.com"
       - name: Download wayback leanback assets
         run: python3 .wb/fetch_wayback.py
       - name: Commit results back to branch

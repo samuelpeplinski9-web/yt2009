@@ -1,30 +1,49 @@
 #!/usr/bin/env python3
-# Temporary helper: downloads the 2012-06-22 YouTube Leanback snapshot
-# (HTML + CSS + JS + SWF players + images) from the Wayback Machine.
-# Runs on a GitHub Actions runner because the dev sandbox cannot reach
-# web.archive.org directly. Output goes to 2011leanback_raw/.
+# Temporary helper: downloads the 2012-06-22 YouTube Leanback core assets
+# from the Wayback Machine on a GitHub Actions runner (the dev sandbox
+# cannot reach web.archive.org). Resumable: skips files that already
+# exist, commits+pushes after every successful download.
 import os
 import re
 import sys
 import time
 import gzip
 import io
+import subprocess
 import urllib.request
 import urllib.parse
 import urllib.error
 
 TS = "20120622093607"
-START = "http://www.youtube.com/leanback"
 OUT = "2011leanback_raw"
 UA = ("Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.11 "
       "(KHTML, like Gecko) Chrome/20.0.1132.27 Safari/536.11")
-MAX_FILES = 400
+DEADLINE = time.time() + 5 * 3600  # stay under the 6h job cap
 
-ASSET_EXT = (".css", ".js", ".swf", ".png", ".gif", ".jpg", ".jpeg", ".ico",
-             ".xml", ".json", ".woff", ".ttf", ".eot", ".svg")
+# (url, save_path_relative_to_OUT)
+SEEDS = [
+    ("http://www.gstatic.com/youtube/leanback/3f68892c/javascript/tv-html5.js",
+     "www.gstatic.com/youtube/leanback/3f68892c/javascript/tv-html5.js"),
+    ("http://www.gstatic.com/youtube/leanback/3f68892c/stylesheet/tv-html5.css",
+     "www.gstatic.com/youtube/leanback/3f68892c/stylesheet/tv-html5.css"),
+    ("http://s.ytimg.com/yt/jsbin/html5player-vflBfju3R.js",
+     "s.ytimg.com/yt/jsbin/html5player-vflBfju3R.js"),
+    ("http://s.ytimg.com/yt/cssbin/www-player-vfltUaqw8.css",
+     "s.ytimg.com/yt/cssbin/www-player-vfltUaqw8.css"),
+    ("http://s.ytimg.com/yt/swfbin/watch_as3-vflTL1Rpm.swf",
+     "s.ytimg.com/yt/swfbin/watch_as3-vflTL1Rpm.swf"),
+    ("http://s.ytimg.com/yt/swfbin/cps-vflDeURDJ.swf",
+     "s.ytimg.com/yt/swfbin/cps-vflDeURDJ.swf"),
+    ("http://s.ytimg.com/yt/img/pixel-vfl3z5WfW.gif",
+     "s.ytimg.com/yt/img/pixel-vfl3z5WfW.gif"),
+    ("http://s.ytimg.com/yt/img/no_thumbnail-vfl4t3-4R.jpg",
+     "s.ytimg.com/yt/img/no_thumbnail-vfl4t3-4R.jpg"),
+    ("http://s.ytimg.com/yt/img/no_videos_140-vfl5AhOQY.png",
+     "s.ytimg.com/yt/img/no_videos_140-vfl5AhOQY.png"),
+    ("http://fonts.googleapis.com/css?family=Droid+Sans+TV:regular,bold",
+     "fonts.googleapis.com/droid-sans-tv.css"),
+]
 
-visited = set()
-queue = []
 log = []
 
 
@@ -33,9 +52,22 @@ def logline(s):
     print(s, flush=True)
 
 
-def fetch_raw(full_url, tries=8):
+def sh(cmd):
+    return subprocess.call(cmd, shell=True)
+
+
+def commit_push(msg):
+    sh("git add -f %s" % OUT)
+    if sh('git commit -q -m "%s"' % msg) == 0:
+        sh("git pull -q --rebase origin $GITHUB_REF_NAME 2>/dev/null")
+        sh("git push -q origin HEAD:$GITHUB_REF_NAME")
+
+
+def fetch_raw(full_url, tries=6):
     last = "?"
     for attempt in range(tries):
+        if time.time() > DEADLINE:
+            return None, "deadline"
         req = urllib.request.Request(full_url, headers={
             "User-Agent": UA,
             "Accept-Encoding": "gzip",
@@ -45,7 +77,7 @@ def fetch_raw(full_url, tries=8):
             with urllib.request.urlopen(req, timeout=90) as r:
                 data = r.read()
                 if r.headers.get("Content-Encoding") == "gzip" or \
-                   (data[:2] == b"\x1f\x8b" and not full_url.endswith(".gz")):
+                   data[:2] == b"\x1f\x8b":
                     try:
                         data = gzip.GzipFile(fileobj=io.BytesIO(data)).read()
                     except Exception:
@@ -55,150 +87,115 @@ def fetch_raw(full_url, tries=8):
             last = str(e.code)
             if e.code == 404:
                 return None, last
-            wait = min(120, 20 * (attempt + 1))
-            ra = e.headers.get("Retry-After") if e.headers else None
-            if ra:
-                try:
-                    wait = min(180, max(wait, int(ra)))
-                except ValueError:
-                    pass
-            time.sleep(wait)
+            time.sleep(min(90, 15 * (attempt + 1)))
         except Exception as e:
             last = repr(e)
-            time.sleep(min(120, 20 * (attempt + 1)))
+            time.sleep(min(90, 15 * (attempt + 1)))
     return None, last
 
 
-def fetch(url, tries=8):
-    """try several wayback flavors/timestamps for a url"""
-    attempts = []
-    for ts in (TS, "20120601", "20120801"):
-        attempts.append("https://web.archive.org/web/%sid_/%s" % (ts, url))
-    for a in attempts:
-        data, status = fetch_raw(a, tries)
+def fetch(url):
+    for ts in (TS, "20120601", "20120801", "2012"):
+        if time.time() > DEADLINE:
+            return None
+        data, status = fetch_raw("https://web.archive.org/web/%sid_/%s"
+                                 % (ts, url))
         if data is not None:
-            return data, a
-        logline("  try %s -> %s" % (a, status))
-        tries = 3  # fallback flavors get fewer tries
-    return None, None
+            return data
+        logline("  try ts=%s -> %s" % (ts, status))
+        if status == "deadline":
+            return None
+    return None
 
 
-def norm(url, base):
-    url = url.strip().replace("\\/", "/")
-    if url.startswith("//"):
-        url = "http:" + url
-    elif url.startswith("/"):
-        b = urllib.parse.urlparse(base)
-        url = "%s://%s%s" % (b.scheme or "http", b.netloc, url)
-    elif not url.startswith("http"):
-        url = urllib.parse.urljoin(base, url)
-    m = re.search(r"web\.archive\.org/web/\d+(?:id_|im_|js_|cs_)?/(https?://.+)", url)
-    if m:
-        url = m.group(1)
-    return url.split("#")[0]
-
-
-def want(url):
-    try:
-        p = urllib.parse.urlparse(url)
-    except Exception:
-        return False
-    if p.scheme not in ("http", "https"):
-        return False
-    host = p.netloc.lower()
-    if not any(h in host for h in ("ytimg.com", "youtube.com", "gstatic.com")):
-        return False
-    return p.path.lower().endswith(ASSET_EXT)
-
-
-def save_path(url):
-    p = urllib.parse.urlparse(url)
-    path = p.path.lstrip("/") or "index.html"
-    return os.path.join(OUT, p.netloc, path)
-
-
-def extract(url, data):
+def extract_refs(url, save_path, data):
+    """find more assets referenced by downloaded css"""
+    refs = []
+    if not save_path.endswith(".css"):
+        return refs
     try:
         text = data.decode("utf-8", "replace")
     except Exception:
-        return []
-    found = set()
-    low = url.lower()
-    is_html = low.endswith((".html", ".htm")) or "youtube.com/leanback" in low
-    if is_html:
-        for m in re.findall(r"""(?:src|href)\s*=\s*["']([^"']+)["']""", text):
-            found.add(m)
-        for m in re.findall(r"""["']((?:https?:)?(?:\\/\\/|//)[a-z0-9.\-]*ytimg\.com[^"'\s]*)["']""", text, re.I):
-            found.add(m)
-    if low.endswith(".css") or is_html:
-        for m in re.findall(r"""url\(\s*['"]?([^'")]+)['"]?\s*\)""", text):
-            found.add(m)
-    if low.endswith(".js") or is_html:
-        for m in re.findall(r"""["']((?:https?:)?(?:\\/\\/|//)?[a-z0-9.\-]*ytimg\.com[^"'\s\\]*\.(?:swf|js|css|png|gif|jpg|xml))["']""", text, re.I):
-            found.add(m)
-        for m in re.findall(r"""["'](/yt/[a-z0-9_\-./]+\.(?:swf|js|css|png|gif|jpg))["']""", text, re.I):
-            found.add("http://s.ytimg.com" + m)
-    out = []
-    for f in found:
-        n = norm(f, url)
-        if want(n):
-            out.append(n)
-    return out
-
-
-def finish():
-    os.makedirs(OUT, exist_ok=True)
-    with open(os.path.join(OUT, "FETCH_LOG.txt"), "w") as f:
-        f.write("\n".join(log) + "\n")
+        return refs
+    for m in re.findall(r"""url\(\s*['"]?([^'")]+)['"]?\s*\)""", text):
+        m = m.strip()
+        if m.startswith("data:"):
+            continue
+        full = urllib.parse.urljoin(url, m)
+        m2 = re.search(
+            r"web\.archive\.org/web/\d+(?:id_|im_|js_|cs_)?/(https?://.+)",
+            full)
+        if m2:
+            full = m2.group(1)
+        full = full.split("#")[0].split("?")[0]
+        p = urllib.parse.urlparse(full)
+        if p.scheme not in ("http", "https"):
+            continue
+        host = p.netloc.lower()
+        if not any(h in host for h in
+                   ("ytimg.com", "gstatic.com", "googleusercontent.com",
+                    "googleapis.com", "youtube.com")):
+            continue
+        refs.append((full, p.netloc + p.path))
+    return refs
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    html, src = fetch(START)
-    if html is None:
-        logline("FATAL: could not fetch start page in any flavor")
-        finish()
-        return
-    logline("OK   %s via %s (%d bytes)" % (START, src, len(html)))
-    main_path = os.path.join(OUT, "www.youtube.com", "leanback.html")
-    os.makedirs(os.path.dirname(main_path), exist_ok=True)
-    with open(main_path, "wb") as f:
-        f.write(html)
-    for u in extract(START + "/index.html", html):
-        if u not in visited:
-            visited.add(u)
-            queue.append((u, 1))
-    logline("queued %d assets from main page" % len(queue))
+    queue = list(SEEDS)
+    seen = set(u for u, _ in queue)
+    failed = []
+    passes = 0
 
-    count = 0
-    while queue and count < MAX_FILES:
-        url, depth = queue.pop(0)
-        time.sleep(2)
-        data, src = fetch(url, 5)
-        count += 1
-        if data is None:
-            logline("MISS %s" % url)
-            continue
-        sp = save_path(url)
-        os.makedirs(os.path.dirname(sp), exist_ok=True)
-        with open(sp, "wb") as f:
-            f.write(data)
-        logline("OK   %s (%d bytes)" % (url, len(data)))
-        if depth < 3 and url.lower().endswith((".css", ".js")):
-            for u in extract(url, data):
-                if u not in visited:
-                    visited.add(u)
-                    queue.append((u, depth + 1))
+    while queue and passes < 4 and time.time() < DEADLINE:
+        passes += 1
+        next_failed = []
+        while queue:
+            if time.time() > DEADLINE:
+                logline("deadline reached")
+                break
+            url, rel = queue.pop(0)
+            sp = os.path.join(OUT, rel)
+            if os.path.exists(sp) and os.path.getsize(sp) > 0:
+                logline("SKIP %s (exists)" % rel)
+                data = open(sp, "rb").read()
+            else:
+                time.sleep(2)
+                data = fetch(url)
+                if data is None:
+                    logline("MISS %s" % url)
+                    next_failed.append((url, rel))
+                    continue
+                os.makedirs(os.path.dirname(sp), exist_ok=True)
+                with open(sp, "wb") as f:
+                    f.write(data)
+                logline("OK   %s (%d bytes)" % (url, len(data)))
+                commit_push("wb asset: %s" % rel)
+            for ref in extract_refs(url, sp, data):
+                if ref[0] not in seen:
+                    seen.add(ref[0])
+                    queue.append(ref)
+        queue = next_failed
+        if queue:
+            logline("pass %d done, %d failed, retrying" % (passes, len(queue)))
+            time.sleep(60)
 
-    logline("done: %d fetch attempts" % count)
-    finish()
+    with open(os.path.join(OUT, "FETCH_LOG.txt"), "w") as f:
+        f.write("\n".join(log) + "\n")
+    commit_push("wb fetch log")
+    logline("all done")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:
+    except Exception:
         import traceback
         logline("EXC: " + traceback.format_exc())
-        finish()
+        try:
+            with open(os.path.join(OUT, "FETCH_LOG.txt"), "w") as f:
+                f.write("\n".join(log) + "\n")
+            commit_push("wb fetch log (exc)")
+        except Exception:
+            pass
     sys.exit(0)
