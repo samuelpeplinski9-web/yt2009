@@ -38,6 +38,9 @@ const yt2009_masf = require("./yt2009masf")
 const yt2009_hlsadapter = require("./yt2009hlsadapter")
 const yt2009_flvadapter = require("./yt2009flvadapter")
 const yt2009_defaultadapt = require("./cache_dir/default_avatar_adapt_manager")
+const yt2009_unavailable = require("./yt2009unavailable")
+const yt2009_recovery = require("./yt2009recovery")
+const yt2009_fixtures = require("./yt2009fixtures")
 const ryd = require("./cache_dir/ryd_cache_manager")
 const video_rating = require("./cache_dir/rating_cache_manager")
 const config = require("./config.json")
@@ -760,10 +763,12 @@ app.get("/watch", (req, res) => {
             if(extraSettings.highEndDevice) {
                 data.isHfrResponse = true;
             }
-            if(!data || !data.title || data.restricted) {
-				res.redirect("/?ytsession=1")
-				return;
-			}
+            if(!data || !data.title || data.restricted || data.unplayable) {
+                // turbocharge can't recover restricted/deleted videos -
+                // hand off to the full path, which can
+                renderWatchpageFully()
+                return;
+            }
             if(devTimings) {
                 console.log(t, "turbocharge /PLAYER")
             }
@@ -817,8 +822,10 @@ app.get("/watch", (req, res) => {
             let potBytes = data[1];
             let potKey = data[2];
 			data = yt2009.miniParse(data[0])
-			if(!data || !data.title) {
-				res.redirect("/?ytsession=1")
+			if(!data || !data.title || data.restricted) {
+				// fall back to the full path so deleted/age restricted
+				// videos still get a real watchpage
+				renderWatchpageFully()
 				return;
 			}
             if(req.highEndDevice) {
@@ -836,12 +843,40 @@ app.get("/watch", (req, res) => {
 	}
 
     // actual handling
+    // (also used as the fallback whenever a faster path bails out - the
+    //  full path is the only one that knows how to recover deleted and
+    //  age restricted videos)
+    function renderWatchpageFully() {
     yt2009.fetch_video_data(id, (data) => {
         if(devTimings) {
             console.log(t, "fetch video data done")
         }
         if(!data) {
             res.redirect("/?ytsession=1")
+            return;
+        }
+        /*
+        ======
+        deleted / age restricted / otherwise unavailable videos
+        ======
+        yt2009 used to bounce these straight back to the homepage with a
+        one-line error. now fetch_video_data hands back a full (recovered)
+        data object instead, so just render the watchpage - the renderer
+        knows to put an error box where the player would be.
+        ======
+        */
+        if(data.unavailable) {
+            yt2009.applyWatchpageHtml(data, req, (code) => {
+                if(code == "safetymode") {
+                    res.redirect("/?ytsession=3")
+                    return;
+                }
+                code = yt2009_languages.apply_lang_to_code(code, req)
+                code = yt2009_doodles.applyDoodle(code, req)
+                // deliberately a 200: old browsers (ie6 especially) like
+                // to replace 4xx bodies with their own error pages
+                res.send(code)
+            }, id)
             return;
         }
         if(data.error) {
@@ -868,6 +903,20 @@ app.get("/watch", (req, res) => {
         disableDownloads,
         true
     )
+    }
+    renderWatchpageFully()
+})
+
+/*
+======
+unavailable video recovery diagnostics / test page
+======
+*/
+app.get("/recovery_test", (req, res) => {
+    require("./yt2009recoverytest").page(req, res)
+})
+app.get("/recovery_test/classify", (req, res) => {
+    require("./yt2009recoverytest").classify(req, res)
 })
 
 app.get("/etc_oex_videodata", (req, res) => {
@@ -1384,12 +1433,27 @@ app.get("/get_video_info", (req, res) => {
     }
     getVideoData((data) => {
         if(data.unplayable || !data.title || !data.id) {
-            res.send([
-                "status=fail",
-                "errorcode=100",
-                "suberrorcode=8",
-                "reason=This video is unavailable."
-            ].join("&"))
+            /*
+            ======
+            tell the flash player *why* it failed
+            ======
+            2009 players understood status/errorcode/suberrorcode/reason,
+            so hand them a proper classified failure (age gate, deleted,
+            private, region blocked, ...) rather than one generic string.
+            ======
+            */
+            if(data.unavailable) {
+                res.send(yt2009_unavailable.legacyErrorParams(data))
+                return;
+            }
+            let classified = yt2009_unavailable.classify(
+                data.rawResponse || {}
+            )
+            res.send(yt2009_unavailable.legacyErrorParams({
+                "unavailableState": classified.state,
+                "unavailablePlayerMessage": classified.playerMessage
+                    || "This video is unavailable."
+            }))
             return;
         }
         if(data.live) {
@@ -2573,6 +2637,15 @@ app.get("/next_awesome", (req, res) => {
 let diagnosticWatchCount = 0;
 let hu = false;
 app.get("/get_video", (req, res) => {
+    // offline fixtures that ship a real file (age gate recovery test)
+    if(yt2009_fixtures.enabled() && req.query.video_id) {
+        let fixtureId = req.query.video_id.split("/")[0].substring(0, 11)
+        let fixtureMedia = yt2009_fixtures.mediaPath(fixtureId)
+        if(fixtureMedia) {
+            res.sendFile(fixtureMedia)
+            return;
+        }
+    }
     let waitForPchelper = false;
     if(((req && req.query && req.query.with_pchelper == "1")
     || (req && req.query && req.query.t == "with_pchelper-1"))

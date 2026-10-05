@@ -1,0 +1,53 @@
+{
+    "id": "t3stAGEgate",
+    "label": "Age restricted, no client could recover it",
+    "describes": "Every bypass client still gets gated. We keep the metadata youtube leaked on the gated response and show the 2009 age gate instead of a player.",
+    "expect": "Watchpage with real metadata and a 'Sign in to confirm your age' box over the player.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "LOGIN_REQUIRED",
+            "reason": "Sign in to confirm your age",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "runs": [
+                            {
+                                "text": "Sign in to confirm your age"
+                            }
+                        ]
+                    },
+                    "subreason": {
+                        "runs": [
+                            {
+                                "text": "This video may be inappropriate for some users."
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "videoDetails": {
+            "videoId": "t3stAGEgate",
+            "title": "Rammstein - Pussy (Official Video)",
+            "shortDescription": "Official video. Age restricted on YouTube since release in 2009.",
+            "lengthSeconds": "243",
+            "viewCount": "118402331",
+            "author": "RammsteinOfficial",
+            "channelId": "UCYkjfoqIhjWQ1BMA5l-fdPQ",
+            "keywords": [
+                "rammstein",
+                "pussy",
+                "liebe ist fur alle da"
+            ],
+            "isLive": false
+        },
+        "microformat": {
+            "playerMicroformatRenderer": {
+                "uploadDate": "2009-09-16",
+                "category": "Music"
+            }
+        }
+    },
+    "recoveredPlayer": null
+}

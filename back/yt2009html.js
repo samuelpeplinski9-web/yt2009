@@ -20,6 +20,9 @@ const constants = require("./yt2009constants.json")
 const config = require("./config.json")
 const userid = require("./cache_dir/userid_cache")
 const playerProto = require("./proto/android_player_pb")
+const yt2009unavailable = require("./yt2009unavailable")
+const yt2009recovery = require("./yt2009recovery")
+const yt2009fixtures = require("./yt2009fixtures")
 const crypto = require("crypto")
 const signedInNext = false;
 const devTimings = false;
@@ -260,6 +263,63 @@ module.exports = {
         let retryMirror = this.innertube_get_data;
         let useAndroidPlayer = true;
 
+        /*
+        =======
+        offline fixtures
+        =======
+        canned innertube responses for the deleted / age restricted test
+        cases. only ever active when explicitly enabled.
+        */
+        if(yt2009fixtures.enabled() && yt2009fixtures.has(id)) {
+            let fixture = yt2009fixtures.combinedResponse(id)
+            if(config.env == "dev") {
+                console.log(`[${id}] served from offline fixture`)
+            }
+            // fixtures go through the exact same recovery path a live
+            // response would, so the age gate bypass is genuinely tested
+            yt2009recovery.attemptRestrictedRecovery(
+                id, fixture, (repaired) => {
+                    setTimeout(() => {callback(repaired)}, 0)
+                }
+            )
+            return;
+        }
+
+        /*
+        =======
+        callback hardening
+        =======
+        innertube fetches used to be able to silently never resolve
+        (youtube unreachable, json parse blowing up inside a .then with no
+        .catch, ...) which left the whole watch request hanging until the
+        browser gave up. now we always answer - worst case with an empty
+        response, which classifies as a network failure and renders the
+        "could not be loaded" watchpage instead of nothing at all.
+        */
+        const INNERTUBE_WATCHDOG = parseInt(config.innertube_timeout || 20000)
+        let answered = false;
+        const originalCallback = callback;
+        callback = function(response) {
+            if(answered) return;
+            answered = true;
+            clearTimeout(watchdog)
+            originalCallback(response)
+        }
+        let watchdog = setTimeout(() => {
+            if(answered) return;
+            console.log(
+                `[${id}] innertube did not respond in `
+              + `${INNERTUBE_WATCHDOG}ms - serving unavailable page`
+            )
+            callback({
+                "playabilityStatus": {
+                    "status": "ERROR",
+                    "reason": "This video could not be loaded.",
+                    "yt2009NetworkFailure": true
+                }
+            })
+        }, INNERTUBE_WATCHDOG)
+
         let timer = 0;
         let timingInterval;
         if(devTimings) {
@@ -344,7 +404,11 @@ module.exports = {
                 console.log(error)
                 callbacksList.push("data_api")
                 markCallbackDone()
-            }})
+            }}).catch(error => {
+                // data api unreachable - not fatal, carry on without it
+                callbacksList.push("data_api_failed")
+                markCallbackDone()
+            })
         }
         let callbacksMade = 0;
         let combinedResponse = {}
@@ -367,7 +431,7 @@ module.exports = {
             }),
             "method": "POST",
             "mode": "cors"
-        }).then(r => {r.json().then(r => {
+        }).then(r => {return r.json()}).then(r => {
             if(devTimings) {
                 console.log("/next received", timer)
             }
@@ -376,10 +440,44 @@ module.exports = {
             }
             callbacksList.push("next")
             markCallbackDone()
-        })})
+        }).catch(error => {
+            // /next failing must not stall the whole watchpage - the
+            // player response alone is enough to render something.
+            if(config.env == "dev") {
+                console.log(`[${id}] /next failed:`, error && error.message)
+            }
+            callbacksList.push("next_failed")
+            markCallbackDone()
+        })
 
         rHeaders["user-agent"] = ANDROID_REQ_UA
-        function onPlayerReceived(r) {
+
+        /*
+        =======
+        age gate / restricted recovery
+        =======
+        the android client we normally use gets age gated. before giving
+        up on a video, retry it through clients that aren't:
+        TVHTML5_SIMPLY_EMBEDDED_PLAYER, WEB_EMBEDDED_PLAYER, MWEB, IOS,
+        then youtubei.js, then yt-dlp. if any of them hands back a usable
+        player response we splice its metadata and streams in and carry on
+        as if nothing happened.
+        */
+        let recoveryAttempted = false;
+        function onPlayerReceived(rawPlayerResponse) {
+            if(recoveryAttempted) {
+                onPlayerReceivedFinal(rawPlayerResponse)
+                return;
+            }
+            recoveryAttempted = true;
+            yt2009recovery.attemptRestrictedRecovery(
+                id, rawPlayerResponse, (repaired) => {
+                    onPlayerReceivedFinal(repaired)
+                }
+            )
+        }
+
+        function onPlayerReceivedFinal(r) {
             if(devTimings) {
                 console.log("/player received", timer)
             }
@@ -393,7 +491,10 @@ module.exports = {
                 if(config.env == "dev") {
                     console.log(`[${id}] got login required! retrying`)
                 }
-                retryMirror(id, callback, pullChannelEarly, true)
+                // hand the watchdog over to the retry
+                answered = true;
+                clearTimeout(watchdog)
+                retryMirror(id, originalCallback, pullChannelEarly, true)
                 return;
             }
             if(r
@@ -550,6 +651,62 @@ module.exports = {
 
             let data = {}
 
+            /*
+            =======
+            handleUnavailable
+            =======
+            shared bail-out for every way a video can be un-watchable.
+            classifies the failure, scrapes together whatever metadata is
+            still reachable and calls back with a complete, renderable
+            watchpage data object instead of a bare error string.
+            =======
+            */
+            let unavailableHandled = false;
+            const handleUnavailable = (classification, displayError) => {
+                if(unavailableHandled) return;
+                unavailableHandled = true;
+
+                if(config.env == "dev") {
+                    console.log(
+                        `[${id}] unavailable (${classification.state})`
+                      + (classification.subreason
+                         ? ` - "${classification.subreason}"` : "")
+                    )
+                }
+
+                const finish = (meta) => {
+                    let built = yt2009unavailable.buildVideoData(
+                        id, classification, meta || {}
+                    )
+                    // keep .error around for every pre-existing caller
+                    built.error = displayError
+                                || classification.playerMessage
+                                || "This video is unavailable.";
+                    if(config.env == "dev") {
+                        console.log(
+                            `[${id}] unavailable page ready `
+                          + `(metadata: ${built.metadataSource})`
+                        )
+                    }
+                    callback(built)
+                }
+
+                // age gated / blocked videos usually still carry their
+                // metadata on the failing response itself, so only go
+                // digging through archives when there really is nothing.
+                let inline = classification.inlineMetadata;
+                if(inline) {
+                    finish(inline)
+                    return;
+                }
+
+                yt2009recovery.recoverMetadata(id, {
+                    "resetCache": resetCache
+                }, (meta) => {
+                    finish(meta)
+                })
+            }
+
             let time = 0;
             let x;
             if(devTimings) {
@@ -565,6 +722,46 @@ module.exports = {
                 if(devTimings) {
                     console.log("innertube pulls", time)
                 }
+
+                /*
+                =======
+                unavailable video check
+                =======
+                run before anything else, because youtube frequently hands
+                back a *complete* videoDetails block on a video it refuses
+                to play (age gated, region blocked, members only, ...).
+                those used to slip through as if they were fine and then
+                render a watchpage with a dead player on it.
+
+                if there are usable streams despite the odd status, carry
+                on as before - some UNPLAYABLE responses still play.
+                =======
+                */
+                let preClassification = yt2009unavailable.classify(videoData)
+                if(!preClassification.ok
+                && !preClassification.hasStreams
+                && config.unavailable_watchpage !== false) {
+                    handleUnavailable(
+                        preClassification,
+                        preClassification.playerMessage
+                    )
+                    return;
+                }
+
+                /*
+                =======
+                recovered restricted videos
+                =======
+                this one came back from an embed/yt-dlp retry after
+                youtube initially refused to serve it. it plays normally
+                from here on, we just remember that so the page can say so.
+                =======
+                */
+                if(videoData && videoData.yt2009WasRestricted) {
+                    data.recoveredFrom = videoData.yt2009RestrictedState
+                    data.recoverySource = videoData.yt2009RecoverySource
+                }
+
                 try {
                     data.title = videoData.videoDetails.title
                 }
@@ -591,7 +788,25 @@ module.exports = {
                     }
                     if(!displayError) {displayError = defaultError;}
                     data.error = displayError
-                    callback(data)
+
+                    /*
+                    =======
+                    deleted / restricted videos
+                    =======
+                    youtube gave us nothing usable. rather than bouncing
+                    the viewer back to the homepage (which is what yt2009
+                    used to do, and which loses the video id entirely),
+                    work out *why* it failed, go dig up whatever metadata
+                    survives elsewhere and hand back a complete, renderable
+                    watchpage data object.
+                    */
+                    if(config.unavailable_watchpage === false) {
+                        callback(data)
+                        return;
+                    }
+                    handleUnavailable(
+                        yt2009unavailable.classify(videoData), displayError
+                    )
                     return;
                 }
 
@@ -1251,6 +1466,70 @@ module.exports = {
 
 
     "applyWatchpageHtml": function(data, req, callback, qualityList) {
+        /*
+        =======
+        unavailable videos
+        =======
+        deleted / age restricted / private / blocked videos go through the
+        exact same renderer as everything else (so the masthead, metadata,
+        recovered comments, recovered related videos and the footer all
+        still work), we just make sure nothing tries to build a player and
+        then swap the player area out for a 2009-style error box at the end.
+        */
+        if(data && data.unavailable) {
+            // nothing to stream, nothing to rate, nothing to download
+            data.qualities = []
+            data.extendedItagData = []
+            data.d = false;
+            data.live = false;
+            data.pMp4 = null;
+            data.mp4 = null;
+            data.isHfrResponse = false;
+            if(!data.comments) data.comments = []
+            if(!data.related) data.related = []
+            if(!data.tags) data.tags = []
+            if(!data.description) data.description = ""
+
+            const unavailableCallback = callback;
+            callback = function(code) {
+                if(typeof code == "string") {
+                    try {
+                        code = yt2009unavailable.postProcess(code, data)
+                    }
+                    catch(error) {
+                        console.log(
+                            "[unavailable] postProcess failed", error
+                        )
+                    }
+                }
+                unavailableCallback(code)
+            }
+        }
+        else if(data.recoveredFrom) {
+            /*
+            =======
+            recovered restricted video
+            =======
+            it plays, but say where the stream came from so it's obvious
+            the bypass did something rather than youtube quietly relenting.
+            =======
+            */
+            const recoveredCallback = callback;
+            callback = function(code) {
+                if(typeof code == "string") {
+                    try {
+                        code = yt2009unavailable.recoveredNotice(code, data)
+                    }
+                    catch(error) {
+                        console.log(
+                            "[unavailable] recoveredNotice failed", error
+                        )
+                    }
+                }
+                recoveredCallback(code)
+            }
+        }
+
         // apply data from fetch_video_data to html
         let code = watchpage_code;
         let requiredCallbacks = 1;
@@ -1599,7 +1878,7 @@ module.exports = {
         }
 
         // unplayable state
-        if(data.unplayable && !useFlash) {
+        if(data.unplayable && !useFlash && !data.unavailable) {
             code = code.replace(
                 `//yt2009-unplay`,
                 `showUnrecoverableError("This video is unavailable.")`
@@ -3214,7 +3493,18 @@ https://web.archive.org/web/20091111/http://www.youtube.com/watch?v=${data.id}`
         let useRydRating = "4.5"
         let rydCallbackSent = false;
         requiredCallbacks++;
-        yt2009ryd.readWait(data.id, (rating) => {
+        // a video that isn't there has no ratings to look up either -
+        // don't spend a network roundtrip finding that out
+        const rydRead = data.unavailable
+            ? function(id, cb) {
+                  cb({
+                      "l": data.ratingCount || 0,
+                      "d": 0,
+                      "r": data.rating || 0
+                  })
+              }
+            : function(id, cb, ext) {yt2009ryd.readWait(id, cb, ext)}
+        rydRead(data.id, (rating) => {
             let rateCount = rating.l + rating.d
             code = code.replace(
                 "yt2009_ratings_count",
@@ -3244,13 +3534,16 @@ https://web.archive.org/web/20091111/http://www.youtube.com/watch?v=${data.id}`
             
             if(rating == "0.0") {
                 // if no actual ratings, change onsite rating number to 0
-                let ratingCount = code.split(
-                    `id="defaultRatingMessage"><span class="smallText">`
-                )[1].split(` lang_ratings_suffix`)[0]
-                code = code.replace(
-                    `id="defaultRatingMessage"><span class="smallText">${ratingCount}`,
-                    `id="defaultRatingMessage"><span class="smallText">0`
-                )
+                try {
+                    let ratingCount = code.split(
+                        `id="defaultRatingMessage"><span class="smallText">`
+                    )[1].split(` lang_ratings_suffix`)[0]
+                    code = code.replace(
+                        `id="defaultRatingMessage"><span class="smallText">${ratingCount}`,
+                        `id="defaultRatingMessage"><span class="smallText">0`
+                    )
+                }
+                catch(error) {}
             }
 
             useRydRating = parseFloat(rating)
@@ -4067,7 +4360,11 @@ https://web.archive.org/web/20091111/http://www.youtube.com/watch?v=${data.id}`
         || (req.headers.cookie
         && req.headers.cookie.includes("with_pchelper_watch")))
         || (req.query.exp_turbocharge == 1
-        || flags.includes("exp_turbocharge"))) {
+        || flags.includes("exp_turbocharge"))
+        // an unavailable video has no player for a banner to sit above,
+        // and its channel is frequently gone too - asking youtube about
+        // it only ever stalls the page
+        || data.unavailable) {
             serversideBannerPull = false;
             requiredCallbacks--;
         }
@@ -4152,6 +4449,30 @@ https://web.archive.org/web/20091111/http://www.youtube.com/watch?v=${data.id}`
             return;
         }
         innertube_context = this.get_innertube_context()
+        /*
+        =======
+        comment fetches must always answer
+        =======
+        a video whose comments can't be loaded (youtube unreachable,
+        comments disabled on a deleted video, a malformed continuation)
+        used to leave the whole watchpage render waiting forever. cap it.
+        =======
+        */
+        let commentsAnswered = false;
+        const originalCommentCallback = callback;
+        callback = function(comments) {
+            if(commentsAnswered) return;
+            commentsAnswered = true;
+            clearTimeout(commentWatchdog)
+            originalCommentCallback(comments || [])
+        }
+        let commentWatchdog = setTimeout(() => {
+            if(commentsAnswered) return;
+            if(config.env == "dev") {
+                console.log(`[${id}] comment continuation timed out`)
+            }
+            callback([])
+        }, parseInt(config.comments_timeout || 15000))
         if(continuations_cache[token]) {
             callback(continuations_cache[token])
         } else {
@@ -4233,7 +4554,19 @@ https://web.archive.org/web/20091111/http://www.youtube.com/watch?v=${data.id}`
                         return;
                     }
                     sendComments()
+                }).catch(error => {
+                    // unparseable comment response
+                    callback([])
                 })
+            }).catch(error => {
+                // youtube unreachable - render the page without comments
+                if(config.env == "dev") {
+                    console.log(
+                        `[${id}] comment fetch failed:`,
+                        error && error.message
+                    )
+                }
+                callback([])
             })
         }
     },

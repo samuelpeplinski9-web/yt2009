@@ -1,0 +1,38 @@
+{
+    "id": "t3stPRIVate",
+    "label": "Private video",
+    "describes": "LOGIN_REQUIRED but it's privacy, not age. Must NOT be mistaken for an age gate.",
+    "expect": "'This video is private.' box, no age gate wording.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "LOGIN_REQUIRED",
+            "reason": "This video is private.",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "This video is private."
+                    },
+                    "subreason": {
+                        "simpleText": "Sign in if you've been granted access to this video"
+                    }
+                }
+            }
+        }
+    },
+    "recoveredMetadataSource": "local_cache",
+    "recoveredMetadataSources": [
+        "local_cache"
+    ],
+    "recoveredMetadata": {
+        "title": "family holiday 2009 (do not share)",
+        "description": "",
+        "author_name": "dmbrennan81",
+        "author_url": "/user/dmbrennan81",
+        "viewCount": 34,
+        "upload": "2009-08-11",
+        "length": 612,
+        "tags": [],
+        "category": "People & Blogs"
+    }
+}

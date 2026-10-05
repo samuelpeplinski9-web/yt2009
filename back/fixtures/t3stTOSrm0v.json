@@ -1,0 +1,45 @@
+{
+    "id": "t3stTOSrm0v",
+    "label": "Removed for violating the Terms of Service",
+    "describes": "Classic 'removed for violating YouTube's Terms of Service' takedown, metadata recovered from Filmot.",
+    "expect": "ToS wording in the player box, metadata via Filmot.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "ERROR",
+            "reason": "Video unavailable",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "Video unavailable"
+                    },
+                    "subreason": {
+                        "simpleText": "This video has been removed for violating YouTube's Terms of Service."
+                    },
+                    "thumbnail": {
+                        "thumbnails": []
+                    }
+                }
+            }
+        }
+    },
+    "recoveredMetadataSource": "filmot",
+    "recoveredMetadataSources": [
+        "filmot"
+    ],
+    "recoveredMetadata": {
+        "title": "HOW TO GET FREE V BUCKS (NOT CLICKBAIT) (2009 edition)",
+        "description": "subscribe for more",
+        "author_name": "xXgamerpro420Xx",
+        "author_url": "/user/xXgamerpro420Xx",
+        "viewCount": 88213,
+        "upload": "2009-12-01",
+        "length": 183,
+        "tags": [
+            "free",
+            "glitch",
+            "tutorial"
+        ],
+        "category": "Gaming"
+    }
+}

@@ -1,0 +1,99 @@
+{
+    "id": "t3stAGEokay",
+    "label": "Age restricted, recovered through embedded client",
+    "describes": "The android client gets age gated. TVHTML5_SIMPLY_EMBEDDED_PLAYER returns the real video.",
+    "expect": "A completely normal watchpage - metadata, description, related videos - because recovery succeeded.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "LOGIN_REQUIRED",
+            "reason": "Sign in to confirm your age",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "runs": [
+                            {
+                                "text": "Sign in to confirm your age"
+                            }
+                        ]
+                    },
+                    "subreason": {
+                        "runs": [
+                            {
+                                "text": "This video may be inappropriate for some users."
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "recoveredPlayerSource": "innertube_tvhtml5_embedded",
+    "recoveredPlayer": {
+        "playabilityStatus": {
+            "status": "OK"
+        },
+        "videoDetails": {
+            "videoId": "t3stAGEokay",
+            "title": "Dramatic Chipmunk (uncut)",
+            "shortDescription": "Five seconds that defined a decade.\n\nMarked 18+ in 2011 after a content review, which is why the normal player client can't touch it anymore.",
+            "lengthSeconds": "5",
+            "viewCount": "40118003",
+            "author": "magnifisyncoperailis",
+            "channelId": "UCBqFKDipsnzvJdqI_qWLrNg",
+            "keywords": [
+                "dramatic",
+                "chipmunk",
+                "prairie dog",
+                "zoom"
+            ],
+            "isLive": false,
+            "thumbnail": {
+                "thumbnails": [
+                    {
+                        "url": "/assets/site-assets/pDz4JG-QOJk.jpg",
+                        "width": 480,
+                        "height": 360
+                    }
+                ]
+            }
+        },
+        "streamingData": {
+            "expiresInSeconds": "21540",
+            "formats": [
+                {
+                    "itag": 18,
+                    "url": "/get_video?video_id=t3stAGEokay/mp4",
+                    "mimeType": "video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"",
+                    "qualityLabel": "360p",
+                    "width": 480,
+                    "height": 360
+                }
+            ],
+            "adaptiveFormats": [
+                {
+                    "itag": 134,
+                    "url": "/get_video?video_id=t3stAGEokay/mp4",
+                    "mimeType": "video/mp4; codecs=\"avc1.4d401e\"",
+                    "qualityLabel": "360p",
+                    "width": 480,
+                    "height": 360,
+                    "bitrate": 400000
+                },
+                {
+                    "itag": 140,
+                    "url": "/get_video?video_id=t3stAGEokay/mp4",
+                    "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                    "bitrate": 128000
+                }
+            ]
+        },
+        "microformat": {
+            "playerMicroformatRenderer": {
+                "uploadDate": "2007-06-16",
+                "category": "Comedy",
+                "ownerChannelName": "magnifisyncoperailis"
+            }
+        }
+    }
+}

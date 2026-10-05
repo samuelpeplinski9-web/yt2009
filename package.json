@@ -21,7 +21,8 @@
     "node-fetch": "^2.6.7",
     "node-html-parser": "5.3.3",
     "readline-sync": "^1.4.10",
-    "ws": ">=5.2.5"
+    "ws": ">=5.2.5",
+    "youtubei.js": "^18.1.0"
   },
   "author": "dxegom",
   "license": "Apache-2.0"

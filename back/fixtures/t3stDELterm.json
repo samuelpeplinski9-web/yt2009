@@ -1,0 +1,107 @@
+{
+    "id": "t3stDELterm",
+    "label": "Terminated account, Wayback watchpage recovery",
+    "describes": "Channel was terminated. The Wayback Machine has a 2010 save of the watchpage, so we recover the metadata, the comments *and* the related videos sidebar.",
+    "expect": "Watchpage with archived comments and related videos, and a 'account has been terminated' box in the player area.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "ERROR",
+            "reason": "Video unavailable",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "Video unavailable"
+                    },
+                    "subreason": {
+                        "simpleText": "This video is no longer available because the YouTube account associated with this video has been terminated."
+                    },
+                    "thumbnail": {
+                        "thumbnails": []
+                    }
+                }
+            }
+        }
+    },
+    "recoveredMetadataSource": "wayback_watchpage",
+    "recoveredMetadataSources": [
+        "wayback_watchpage"
+    ],
+    "recoveredMetadata": {
+        "title": "Keyboard Cat plays us off - the original",
+        "description": "Play him off, keyboard cat. Recorded 1984, uploaded 2007. The channel this lived on is long gone.",
+        "author_name": "charlieschmidt",
+        "author_url": "/user/charlieschmidt",
+        "viewCount": 18204411,
+        "upload": "2009-02-07",
+        "length": 55,
+        "tags": [
+            "keyboard",
+            "cat",
+            "fatso",
+            "play",
+            "him",
+            "off"
+        ],
+        "category": "Comedy",
+        "archiveYear": 2010,
+        "rating": 4.5,
+        "ratingCount": 44102,
+        "comments": [
+            {
+                "authorName": "pianoman1987",
+                "authorUrl": "/user/pianoman1987",
+                "time": "1 year ago",
+                "content": "play him off, keyboard cat",
+                "likes": 412
+            },
+            {
+                "authorName": "SarahJaneB",
+                "authorUrl": "/user/SarahJaneB",
+                "time": "11 months ago",
+                "content": "i cannot believe this is from 1984. the internet was a mistake and also perfect",
+                "likes": 188
+            },
+            {
+                "authorName": "gmanTheThird",
+                "authorUrl": "/user/gmanTheThird",
+                "time": "10 months ago",
+                "content": "whoever is reading this in 2010, hi",
+                "likes": 97
+            },
+            {
+                "authorName": "mcallister44",
+                "authorUrl": "/user/mcallister44",
+                "time": "8 months ago",
+                "content": "RIP Fatso. best cat on the internet.",
+                "likes": 63
+            }
+        ],
+        "related": [
+            {
+                "id": "t3stDELmeta",
+                "title": "Hybrid Wars! - Toyota Prius Vs Honda Insight - Part 2",
+                "length": "7:17",
+                "views": "671,358 views",
+                "creatorName": "motortrend",
+                "creatorUrl": "/user/motortrend"
+            },
+            {
+                "id": "t3stAGEokay",
+                "title": "Dramatic Chipmunk (uncut)",
+                "length": "0:05",
+                "views": "40,118,003 views",
+                "creatorName": "magnifisyncoperailis",
+                "creatorUrl": "/user/magnifisyncoperailis"
+            },
+            {
+                "id": "t3stUSRdel0",
+                "title": "Charlie bit my finger - again !",
+                "length": "0:56",
+                "views": "142,804,219 views",
+                "creatorName": "HDCYT",
+                "creatorUrl": "/user/HDCYT"
+            }
+        ]
+    }
+}

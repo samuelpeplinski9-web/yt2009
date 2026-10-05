@@ -1,0 +1,50 @@
+{
+    "id": "t3stUSRdel0",
+    "label": "Removed by the uploader, found in yt2009's own cache",
+    "describes": "yt2009 had already cached this video before it went away. The local cache is checked first and wins.",
+    "expect": "Full watchpage straight from video_cache.json, 'removed by the user' box.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "ERROR",
+            "reason": "Video unavailable",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "Video unavailable"
+                    },
+                    "subreason": {
+                        "simpleText": "This video has been removed by the user."
+                    },
+                    "thumbnail": {
+                        "thumbnails": []
+                    }
+                }
+            }
+        }
+    },
+    "recoveredMetadataSource": "local_cache",
+    "recoveredMetadataSources": [
+        "local_cache"
+    ],
+    "recoveredMetadata": {
+        "title": "Charlie bit my finger - again !",
+        "description": "Even thought the front teeth have now gone, the biting continues.\n\nOriginal upload, pulled by the family in 2021 when the video was auctioned.",
+        "author_name": "HDCYT",
+        "author_url": "/user/HDCYT",
+        "author_id": "UC5Gk4e2tjOR9zIqNnjGSAbg",
+        "viewCount": 142804219,
+        "upload": "2007-05-22",
+        "length": 56,
+        "tags": [
+            "charlie",
+            "harry",
+            "bit",
+            "finger",
+            "brothers"
+        ],
+        "category": "People & Blogs",
+        "rating": 4.5,
+        "ratingCount": 330118
+    }
+}

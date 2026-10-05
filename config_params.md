@@ -42,3 +42,31 @@ other params you can set:
 - `ipv6` - a string containing your ipv6 subnet you can use. (e.g. "2a01:4f8:xxxx:xxxx")
 - `alt_hostname` - allows using an alt API hostname, enabling hostsfile redirect to www.youtube.com.
 ONLY TO BE USED AFTER INITIAL SETUP. `true/false`
+## unavailable / restricted videos
+
+see `unavailable_videos.md` for the full picture. all of these are optional.
+
+- `unavailable_watchpage` - render a watchpage for deleted/restricted videos instead of
+bouncing back to the homepage. `true/false` (default: `true`)
+- `unavailable_embed` - show an error card inside `/embed/` for videos that can't be played,
+instead of a dead player. `true/false` (default: `true`)
+- `unavailable_embed_timeout` - how long `/embed/` waits for the playability check, in ms.
+(default: 10000)
+- `disable_restricted_recovery` - never try to recover streams for age restricted/blocked
+videos. `true/false` (default: `false`)
+- `recovery_timeout` - per-attempt timeout for a stream/metadata recovery source, in ms.
+(default: 12000)
+- `recovery_tool_timeout` - timeout for external tools (yt-dlp), in ms. (default: 45000)
+- `comments_timeout` - how long a watchpage waits for comments before rendering without
+them, in ms. (default: 15000)
+- `ytdlp_path` - path to the yt-dlp binary. (default: `yt-dlp` on PATH)
+- `ytdlp_cookies` - path to a cookies.txt file, for age restricted videos that need a login
+- `ytdlp_cookies_from_browser` - a browser name to pull cookies from instead (e.g. `firefox`)
+- `ytdlp_player_clients` - comma-separated yt-dlp `player_client` list to override the default
+- `recovery_disable_ytdlp` - don't shell out to yt-dlp. `true/false`
+- `recovery_disable_wayback` - don't query the wayback machine for metadata. `true/false`
+- `filmot_key` - a filmot.com api key, used as a last resort for deleted video metadata
+- `offline_fixtures` - serve the bundled test videos in `back/fixtures/` for their ids.
+`true/false` (default: `false`)
+- `offline_fixtures_only` - never touch the network at all; only the bundled fixtures work.
+for development on a machine without youtube access. `true/false` (default: `false`)

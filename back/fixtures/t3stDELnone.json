@@ -1,0 +1,27 @@
+{
+    "id": "t3stDELnone",
+    "label": "Deleted video, no metadata anywhere",
+    "describes": "Every recovery source misses. This is the worst case and it still has to render a page instead of a redirect.",
+    "expect": "Minimal but complete watchpage, placeholder title, 'This video is no longer available.' in the player area.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "ERROR",
+            "reason": "Video unavailable",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "Video unavailable"
+                    },
+                    "subreason": {
+                        "simpleText": "This video is no longer available."
+                    },
+                    "thumbnail": {
+                        "thumbnails": []
+                    }
+                }
+            }
+        }
+    },
+    "recoveredMetadata": null
+}

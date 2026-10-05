@@ -1,0 +1,54 @@
+{
+    "id": "t3stDELmeta",
+    "label": "Deleted video, metadata recovered",
+    "describes": "innertube returns a bare ERROR; an archived GData API response still has the full 2009 metadata.",
+    "expect": "Full watchpage: real title, uploader, description, tags, view count and upload date, with a 'no longer available' box where the player goes.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "ERROR",
+            "reason": "Video unavailable",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "Video unavailable"
+                    },
+                    "subreason": {
+                        "simpleText": "This video is no longer available."
+                    },
+                    "thumbnail": {
+                        "thumbnails": []
+                    }
+                }
+            }
+        }
+    },
+    "recoveredMetadataSource": "wayback_gdata",
+    "recoveredMetadataSources": [
+        "wayback_gdata"
+    ],
+    "recoveredMetadata": {
+        "title": "Hybrid Wars! - Toyota Prius Vs Honda Insight - Part 2",
+        "description": "The second half of our head to head between the 2010 Prius and the 2010 Insight.\n\nShot on location at the Motor Trend test track.\n\nThis upload was taken down in 2013 when the channel restructured its archive.",
+        "author_name": "motortrend",
+        "author_url": "/user/motortrend",
+        "author_id": "UCrWY7xMWCdqLH_wUVKYzhyA",
+        "viewCount": 671358,
+        "upload": "2009-10-29",
+        "length": 437,
+        "tags": [
+            "prius",
+            "insight",
+            "hybrid",
+            "toyota",
+            "honda",
+            "motor",
+            "trend",
+            "comparison",
+            "mpg"
+        ],
+        "category": "Autos & Vehicles",
+        "rating": 4.5,
+        "ratingCount": 1204
+    }
+}

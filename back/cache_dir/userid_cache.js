@@ -17,6 +17,12 @@ module.exports = {
     },
 
     "read": function(url, callback) {
+        // a deleted video can leave us with no channel reference at all.
+        // bail out cleanly instead of throwing a few frames deeper.
+        if(!url || typeof url !== "string") {
+            callback(null)
+            return;
+        }
         if(cache[url]) {
             callback(cache[url])
         } else {

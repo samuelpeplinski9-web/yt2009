@@ -1,0 +1,48 @@
+{
+    "id": "t3stCOPYrgt",
+    "label": "Removed on a copyright claim",
+    "describes": "Youtube names the claimant in the subreason. We keep their exact wording rather than our generic copy.",
+    "expect": "'...due to a copyright claim by Sony Music Entertainment.'",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "ERROR",
+            "reason": "Video unavailable",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "Video unavailable"
+                    },
+                    "subreason": {
+                        "simpleText": "This video is no longer available due to a copyright claim by Sony Music Entertainment."
+                    },
+                    "thumbnail": {
+                        "thumbnails": []
+                    }
+                }
+            }
+        }
+    },
+    "recoveredMetadataSource": "wayback_gdata",
+    "recoveredMetadataSources": [
+        "wayback_gdata",
+        "wayback_oembed"
+    ],
+    "recoveredMetadata": {
+        "title": "Michael Jackson - Billie Jean (Live at Motown 25)",
+        "description": "The moonwalk, 1983. Re-uploaded by a fan in 2008 and claimed two years later.",
+        "author_name": "mjfan1983",
+        "author_url": "/user/mjfan1983",
+        "viewCount": 9412887,
+        "upload": "2008-11-02",
+        "length": 348,
+        "tags": [
+            "michael",
+            "jackson",
+            "billie jean",
+            "motown 25",
+            "moonwalk"
+        ],
+        "category": "Music"
+    }
+}

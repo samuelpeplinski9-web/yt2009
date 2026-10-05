@@ -1,0 +1,45 @@
+{
+    "id": "t3stGEOblok",
+    "label": "Blocked in this country",
+    "describes": "UNPLAYABLE with full metadata attached. Recovery is attempted (a different client sometimes sees it) and fails, so we render the metadata we were handed.",
+    "expect": "Full metadata, 'not made this video available in your country' box.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "UNPLAYABLE",
+            "reason": "Video unavailable",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "Video unavailable"
+                    },
+                    "subreason": {
+                        "simpleText": "The uploader has not made this video available in your country."
+                    }
+                }
+            }
+        },
+        "videoDetails": {
+            "videoId": "t3stGEOblok",
+            "title": "Die Sendung mit der Maus - Intro (1972)",
+            "shortDescription": "GEMA says no.",
+            "lengthSeconds": "92",
+            "viewCount": "2201884",
+            "author": "WDRKinder",
+            "channelId": "UCuVPpxrm2VAgpH3Ktln4HXg",
+            "keywords": [
+                "maus",
+                "wdr",
+                "intro"
+            ],
+            "isLive": false
+        },
+        "microformat": {
+            "playerMicroformatRenderer": {
+                "uploadDate": "2009-03-20",
+                "category": "Entertainment"
+            }
+        }
+    },
+    "recoveredPlayer": null
+}

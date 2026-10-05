@@ -1,0 +1,38 @@
+{
+    "id": "t3stMEMonly",
+    "label": "Members-only video",
+    "describes": "UNPLAYABLE, metadata intact, nothing we can do about it.",
+    "expect": "'available to this channel's members only' box.",
+    "player": {
+        "responseContext": {},
+        "playabilityStatus": {
+            "status": "UNPLAYABLE",
+            "reason": "This video is available to this channel's members on level: Supporter (or any higher level). Join this channel to get access to members-only content and other exclusive perks.",
+            "errorScreen": {
+                "playerErrorMessageRenderer": {
+                    "reason": {
+                        "simpleText": "Join this channel to get access to members-only content"
+                    }
+                }
+            }
+        },
+        "videoDetails": {
+            "videoId": "t3stMEMonly",
+            "title": "behind the scenes: the 2009 rebuild (members only)",
+            "shortDescription": "thanks for supporting the channel",
+            "lengthSeconds": "1455",
+            "viewCount": "4120",
+            "author": "someretrochannel",
+            "channelId": "UCK8sQmJBp8GCxrOtXWBpyEA",
+            "keywords": [],
+            "isLive": false
+        },
+        "microformat": {
+            "playerMicroformatRenderer": {
+                "uploadDate": "2024-02-18",
+                "category": "Entertainment"
+            }
+        }
+    },
+    "recoveredPlayer": null
+}

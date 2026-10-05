@@ -1,0 +1,14 @@
+{
+    "id": "t3stNETfail",
+    "label": "YouTube unreachable",
+    "describes": "Simulates innertube timing out entirely. yt2009 used to hang the request forever; now it classifies as a network failure and still renders.",
+    "expect": "'This video could not be loaded.' box, page still renders.",
+    "player": {
+        "playabilityStatus": {
+            "status": "ERROR",
+            "reason": "This video could not be loaded.",
+            "yt2009NetworkFailure": true
+        }
+    },
+    "recoveredMetadata": null
+}

@@ -3390,6 +3390,11 @@ module.exports = {
     },
 
     "mainWithEarly": function(id, callback) {
+        if(!id || typeof id !== "string") {
+            // unavailable video with no recoverable channel
+            callback(null)
+            return;
+        }
         //console.log("early channel wait")
 
         if(earlyProgressPulls.includes(id)) {

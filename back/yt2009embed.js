@@ -7,8 +7,101 @@ const config = require("./config.json")
 const trusted = require("./yt2009trustedcontext")
 const sabrlib = require("./yt2009sabr")
 const ytexports = require("./yt2009exports")
+const unavailable = require("./yt2009unavailable")
 
 let ip_request_count = {}
+
+/*
+======
+embedPlayability
+======
+embeds used to render a player for *any* id and only discover the video
+was deleted / age gated once the <video> tag 404'd, which looks like a
+broken site rather than a missing video. ask innertube first (that call
+also runs the restricted-stream recovery, so age gated embeds that can
+be recovered simply start working) and bail out with a proper 2009-style
+error card when it really isn't playable.
+======
+*/
+function embedPlayability(id, callback) {
+    if(config.unavailable_embed === false) {
+        callback(null)
+        return;
+    }
+
+    const html = require("./yt2009html")
+
+    // already known-good locally? don't spend a round trip on it
+    let cached = html.get_cache_video(id)
+    if(cached && cached.title && !cached.unavailable) {
+        callback(null)
+        return;
+    }
+
+    let answered = false;
+    const answer = (classification) => {
+        if(answered) return;
+        answered = true;
+        callback(classification)
+    }
+    // never let the playability probe hold an embed hostage
+    setTimeout(() => {answer(null)}, parseInt(
+        config.unavailable_embed_timeout || 10000
+    ))
+
+    try {
+        html.innertube_get_data(id, (playerResponse) => {
+            let classification = unavailable.classify(playerResponse)
+            if(classification.ok || classification.hasStreams) {
+                answer(null)
+                return;
+            }
+            answer(classification)
+        })
+    }
+    catch(error) {
+        answer(null)
+    }
+}
+
+function embedErrorPage(id, classification) {
+    let message = classification.playerMessage
+               || classification.headline
+               || "This video is unavailable."
+    let sub = ""
+    if(classification.body && classification.body !== message) {
+        sub = `<div class="yt2009-embed-unavailable-sub">`
+            + unavailable.escapeHtml(classification.body)
+            + `</div>`
+    }
+    return [
+        `<!DOCTYPE html>`,
+        `<html><head><title>YouTube - video unavailable</title>`,
+        `<style>`,
+        `html,body{margin:0;padding:0;background:#000;height:100%;}`,
+        `.yt2009-embed-unavailable{`,
+        `position:absolute;left:0;top:0;width:100%;height:100%;`,
+        `background:#000;color:#fff;font-family:Arial,sans-serif;`,
+        `display:table;text-align:center;}`,
+        `.yt2009-embed-unavailable-cell{`,
+        `display:table-cell;vertical-align:middle;padding:0 24px;}`,
+        `.yt2009-embed-unavailable-msg{font-size:13px;line-height:1.5em;}`,
+        `.yt2009-embed-unavailable-sub{`,
+        `font-size:11px;color:#aaa;margin-top:8px;line-height:1.5em;}`,
+        `.yt2009-embed-unavailable a{color:#9cf;}`,
+        `</style></head><body>`,
+        `<div class="yt2009-embed-unavailable">`,
+        `<div class="yt2009-embed-unavailable-cell">`,
+        `<div class="yt2009-embed-unavailable-msg">`,
+        unavailable.escapeHtml(message),
+        `</div>`,
+        sub,
+        `<div class="yt2009-embed-unavailable-sub">`,
+        `<a href="/watch?v=${unavailable.escapeHtml(id)}" target="_blank">`,
+        `Watch on YouTube</a></div>`,
+        `</div></div></body></html>`
+    ].join("")
+}
 
 function flash_handler(req, res) {
     let videoId = req.originalUrl.split("embedF/")[1].split("?")[0]
@@ -73,7 +166,7 @@ function flash_handler(req, res) {
 }
 
 
-module.exports = function(req, res) {
+module.exports = function embedHandler(req, res) {
     // flash?
     if(req.originalUrl.includes("embedF")) {
         flash_handler(req, res);
@@ -81,6 +174,24 @@ module.exports = function(req, res) {
     }
 
     let id = req.originalUrl.split("embed/")[1].split("?")[0].substring(0, 11)
+
+    // can this even be played? (see embedPlayability above)
+    if(id.length == 11 && !req.yt2009EmbedChecked) {
+        req.yt2009EmbedChecked = true;
+        embedPlayability(id, (classification) => {
+            if(classification) {
+                if(config.env == "dev") {
+                    console.log(
+                        `[${id}] embed unavailable (${classification.state})`
+                    )
+                }
+                res.send(embedErrorPage(id, classification))
+                return;
+            }
+            embedHandler(req, res)
+        })
+        return;
+    }
     let watchflags = "";
     let code = embed_code;
     let live = req.query.live || false

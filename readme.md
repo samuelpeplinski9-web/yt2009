@@ -133,3 +133,4 @@ over time some tools and documentation was written about yt2009. for an easy ref
 - [flash_additions.md](flash_additions.md) - some info on caption and annotations modules within the default 2009 flash player.
 - [flash_player_setup.md](flash_player_setup.md) - manual info for preparing vanilla flash players for use with yt2009.
 - [hostsfile.md](hostsfile.md) - a guide on using yt2009 at www.youtube.com
+- [unavailable_videos.md](unavailable_videos.md) - watchpages for deleted videos, and stream recovery for age restricted ones.
